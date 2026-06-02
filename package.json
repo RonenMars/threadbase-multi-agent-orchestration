@@ -1,0 +1,29 @@
+{
+  "name": "threadbase-orchestration",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Durable multi-agent task orchestration for Threadbase, built on Temporal.",
+  "type": "commonjs",
+  "scripts": {
+    "temporal:up": "docker compose up -d",
+    "temporal:down": "docker compose down",
+    "temporal:reset": "docker compose down -v",
+    "worker": "tsx watch src/worker.ts",
+    "kickoff": "tsx src/starter.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0",
+    "@temporalio/activity": "^1.11.0",
+    "@temporalio/client": "^1.11.0",
+    "@temporalio/worker": "^1.11.0",
+    "@temporalio/workflow": "^1.11.0",
+    "dotenv": "^17.4.2",
+    "nanoid": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

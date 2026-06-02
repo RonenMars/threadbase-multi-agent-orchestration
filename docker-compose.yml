@@ -1,0 +1,64 @@
+# Local Temporal stack: Postgres (persistence) + Temporal server (auto-setup) + Web UI.
+# Start with:  docker compose up -d
+#   - Temporal gRPC frontend -> localhost:7233   (workers & clients connect here)
+#   - Temporal Web UI        -> http://localhost:8080
+# Stop with:   docker compose down        (add -v to also wipe the database volume)
+#
+# NOTE: auto-setup is for local/dev. In production use the temporalio/server image
+#       against a managed database, or just use Temporal Cloud.
+
+services:
+  postgresql:
+    image: postgres:16
+    container_name: temporal-postgres
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    ports:
+      - "5432:5432"
+    volumes:
+      - temporal-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - temporal-net
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: temporal
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      - DB=postgres12             # plugin name for the current auto-setup image (postgres12 / postgres12_pgx are the only valid values)
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgresql
+    ports:
+      - "7233:7233"             # gRPC frontend: workers + clients connect here
+    networks:
+      - temporal-net
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: temporal-ui
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8080:8080"             # Web UI: http://localhost:8080
+    networks:
+      - temporal-net
+
+volumes:
+  temporal-pgdata:
+
+networks:
+  temporal-net:
+    driver: bridge
