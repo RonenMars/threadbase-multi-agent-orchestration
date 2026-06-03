@@ -1,8 +1,14 @@
 # Stage 2 — `@threadbase/agent-types` extraction to its own repo
 
-**Date:** 2026-06-03
-**Status:** Draft — sequence of operations, not a TDD plan
+**Date:** 2026-06-03 (planned), 2026-06-04 (executed)
+**Status:** Completed
 **Goal:** Move the `agent-types` package out of `tb-multi-agent/packages/agent-types/` into its own GitHub repo (`threadbase-agent-types`), and submodule it into both `tb-multi-agent` and `tb-streamer`. Removes the sibling-checkout requirement and fixes both repos' CI in one stroke.
+
+**Execution outcome:**
+- New repo: [RonenMars/threadbase-agent-types](https://github.com/RonenMars/threadbase-agent-types) at SHA `f8bfe43`.
+- tb-streamer wired in commit `0b171cc` (PR #17, CI green).
+- tb-multi-agent wired in commit `f9681a8` (PR #1, CI green).
+- Both repos pin the same SHA; both CIs use `submodules: recursive`.
 
 ---
 

@@ -180,7 +180,7 @@ If your scenario needs a new activity stub variant, add it to `stubs.ts`. Keep `
 
 - **Port conflict** if you run the suite in parallel mode and the random-port allocation collides. Vitest runs files in parallel by default; the harness uses port 0 (OS-assigned), so this should not happen in practice. If it does, set `--no-file-parallelism` in vitest.
 - **Stale tb-streamer `dist/`** if you change tb-streamer code locally and forget to rebuild. The symlinked package serves whatever is currently in `../tb-streamer/dist/`. Run `npm --prefix ../tb-streamer run build` to refresh.
-- **Missing tb-streamer checkout** if `../tb-streamer/` doesn't exist (e.g., on a fresh clone of just tb-multi-agent). `npm install` will fail with a path-not-found error pointing at `vendor/agent-types` resolution. Clone tb-streamer as a sibling before installing.
+- **Missing tb-streamer checkout** if `../tb-streamer/` doesn't exist (e.g., on a fresh clone of just tb-multi-agent). `npm install` tolerates this silently (the `file:../tb-streamer` dep resolves to an empty `node_modules` entry), but the integration tests will fail at import time when they try to load `@threadbase/streamer`. Clone tb-streamer as a sibling and run its build before running integration tests. (Note: `@threadbase/agent-types` is a separate submodule and does NOT require a tb-streamer sibling — see the "How tb-streamer is consumed" section above.)
 - **`TestWorkflowEnvironment` startup latency** — ~1–2s per suite file. The orchestrator unit tests already accept this; integration tests inherit the same trade-off.
 
 ## Roadmap
