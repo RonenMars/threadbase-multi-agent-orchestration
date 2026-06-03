@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The @threadbase/streamer file: dep targets ../tb-streamer, which
+      # doesn't exist in CI. npm install tolerates the missing target
+      # silently — see docs/superpowers/specs/2026-06-03-tb-streamer-
+      # distribution-refactor.md for the permanent fix. For CI today,
+      # we only run unit tests (integration tests need tb-streamer's
+      # dist/ and are local-dev-only).
+      - run: npm install
+
+      - name: Typecheck root
+        run: npm run typecheck
+
+      - name: Typecheck agent-types package
+        run: npm run typecheck:types
+
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - run: npm install
+
+      - name: Unit tests (tb-multi-agent)
+        # Exclude integration tests — they require tb-streamer's built dist/
+        # at ../tb-streamer/dist/, which isn't available in this single-repo
+        # CI. Integration tests run locally before merge; see
+        # test/integration/README.md for the cross-repo setup.
+        run: npx vitest run --exclude 'test/integration/**'
+
+      - name: Unit tests (@threadbase/agent-types)
+        run: npm run test:types
+
+  build-types:
+    name: Build @threadbase/agent-types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - name: Build agent-types package
+        run: npm run build:types
+
+      - name: Verify dist/ output
+        # Spot-check: index.d.ts and index.js must exist and be non-empty.
+        # Catches a class of build-script regressions without re-running
+        # the package's own tests.
+        run: |
+          test -s packages/agent-types/dist/index.js
+          test -s packages/agent-types/dist/index.d.ts
