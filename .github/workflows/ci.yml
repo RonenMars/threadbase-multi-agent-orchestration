@@ -12,6 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # packages/agent-types is a submodule pointing at
+          # RonenMars/threadbase-agent-types. Without submodules:recursive
+          # the directory is empty after checkout and every src/ file that
+          # imports @threadbase/agent-types fails to resolve.
+          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
@@ -25,13 +31,14 @@ jobs:
       # dist/ and are local-dev-only).
       - run: npm install
 
-      # Build the workspace package first so its dist/index.d.ts exists.
+      # Build the agent-types submodule first so its dist/index.d.ts exists.
       # Root tsc resolves @threadbase/agent-types via the workspace symlink
-      # at node_modules/@threadbase/agent-types, which points at
-      # packages/agent-types/ — but TypeScript reads the package's
-      # package.json "types" field (dist/index.d.ts), which isn't generated
-      # until build runs. Locally this is a non-issue because dist/ persists
-      # across sessions; in CI the checkout is fresh every time.
+      # at node_modules/@threadbase/agent-types, which points at the
+      # submodule at packages/agent-types/ — but TypeScript reads the
+      # package's package.json "types" field (dist/index.d.ts), which isn't
+      # generated until build runs. Locally this is a non-issue because
+      # dist/ persists across sessions; in CI the checkout is fresh
+      # every time.
       - name: Build @threadbase/agent-types
         run: npm run build:types
 
@@ -49,6 +56,8 @@ jobs:
         node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
@@ -56,8 +65,8 @@ jobs:
 
       - run: npm install
 
-      # Same reason as the Typecheck job — the workspace package needs to
-      # be built so tsc can resolve its types when vitest transforms the
+      # Same reason as the Typecheck job — the agent-types submodule needs
+      # to be built so tsc can resolve its types when vitest transforms the
       # workflow + activity source files.
       - name: Build @threadbase/agent-types
         run: npm run build:types
@@ -77,6 +86,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
