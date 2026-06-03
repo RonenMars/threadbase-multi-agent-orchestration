@@ -25,6 +25,16 @@ jobs:
       # dist/ and are local-dev-only).
       - run: npm install
 
+      # Build the workspace package first so its dist/index.d.ts exists.
+      # Root tsc resolves @threadbase/agent-types via the workspace symlink
+      # at node_modules/@threadbase/agent-types, which points at
+      # packages/agent-types/ — but TypeScript reads the package's
+      # package.json "types" field (dist/index.d.ts), which isn't generated
+      # until build runs. Locally this is a non-issue because dist/ persists
+      # across sessions; in CI the checkout is fresh every time.
+      - name: Build @threadbase/agent-types
+        run: npm run build:types
+
       - name: Typecheck root
         run: npm run typecheck
 
@@ -45,6 +55,12 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - run: npm install
+
+      # Same reason as the Typecheck job — the workspace package needs to
+      # be built so tsc can resolve its types when vitest transforms the
+      # workflow + activity source files.
+      - name: Build @threadbase/agent-types
+        run: npm run build:types
 
       - name: Unit tests (tb-multi-agent)
         # Exclude integration tests — they require tb-streamer's built dist/
