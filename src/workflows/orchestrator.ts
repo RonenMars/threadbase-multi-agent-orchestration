@@ -7,7 +7,6 @@
 import {
   proxyActivities,
   setHandler,
-  setSignalHandler, // ← preserved for clarity (alias)
   condition,
   uuid4,
   executeChild,
@@ -119,5 +118,3 @@ export async function orchestratorWorkflow(sessionId: string): Promise<void> {
   }
 }
 
-// Silence the unused-import linter for the alias preserved at top.
-void setSignalHandler;
