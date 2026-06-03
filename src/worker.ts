@@ -1,4 +1,15 @@
-// src/worker.ts
+// ============================================================================
+// WORKER = the long-running agent process. THIS is your agent pool.
+//
+// It connects to Temporal, polls the Task Queue, and runs:
+// - The long-lived `orchestratorWorkflow` (one per session, holds the signal queue).
+// - The one-shot `turnWorkflow` (one per user message, drives the agent pipeline).
+// - All activities: `processTask`, `reviewTask`, `productSignOff`, `sendProgressEvent`.
+//
+// Run several replicas to scale; Temporal load-balances across the shared
+// Task Queue. Run:  npm run worker
+// ============================================================================
+
 import './shared/load-env';
 import { Worker, NativeConnection } from '@temporalio/worker';
 import * as activities from './activities';
