@@ -2,6 +2,7 @@
   "name": "threadbase-orchestration",
   "version": "0.1.0",
   "private": true,
+  "workspaces": ["packages/*"],
   "description": "Durable multi-agent task orchestration for Threadbase, built on Temporal.",
   "type": "commonjs",
   "scripts": {
@@ -10,7 +11,10 @@
     "temporal:reset": "docker compose down -v",
     "worker": "tsx watch src/worker.ts",
     "kickoff": "tsx src/starter.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:types": "npm --workspace @threadbase/agent-types run build",
+    "typecheck:types": "npm --workspace @threadbase/agent-types run typecheck",
+    "test:types": "npm --workspace @threadbase/agent-types test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
