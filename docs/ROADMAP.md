@@ -20,3 +20,7 @@ Things deferred out of the current milestone, kept here so we can find them agai
 ## Distribution
 
 - **tb-streamer npm publish.** Milestone B integration tests consume tb-streamer via a local `file:../tb-streamer` dep because GitHub-URL installs fail (submodule + native-build chain) and tb-streamer doesn't publish to npm. Path forward: extract `@threadbase/streamer-api` as a workspace package and publish it (Scope B in the spec) — agent surface only, no node-pty/SQLite/CLI deps. Removes the sibling-checkout requirement for integration tests and unlocks external integrators. Full scope analysis and recommended approach: [`docs/superpowers/specs/2026-06-03-tb-streamer-distribution-refactor.md`](superpowers/specs/2026-06-03-tb-streamer-distribution-refactor.md).
+
+## API hygiene
+
+- **Structured error codes retrofit.** Plan 3.5 introduces structured `{error, code}` responses for multi-agent endpoints. Existing PTY-mode endpoints in tb-streamer's `server.ts` still return unstructured `{error: "human msg"}` only. Retrofit them when (a) the mobile app needs distinguishable error handling on PTY paths, (b) a second non-mobile consumer wants typed errors, or (c) the unstructured pattern has caused a real bug. Full design: [`docs/plans/structured-error-codes-retrofit.md`](plans/structured-error-codes-retrofit.md). Estimated effort: 1-2 days focused work.
