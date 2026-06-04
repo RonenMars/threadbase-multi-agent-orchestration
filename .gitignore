@@ -4,4 +4,10 @@ dist/
 *.log
 .DS_Store
 .remember/
-.claude/
+# Ignore everything under .claude/ except project-local skills, which are
+# checked in so the convention rides with the repo. Note: we cannot use
+# a trailing-slash ignore on .claude/ here — gitignore will not re-include
+# any path whose parent directory was excluded.
+.claude/*
+!.claude/skills/
+.claude/worktrees/
