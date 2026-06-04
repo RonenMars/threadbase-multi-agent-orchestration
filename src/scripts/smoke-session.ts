@@ -17,16 +17,19 @@
 import '../shared/load-env';
 import { nanoid } from 'nanoid';
 import { startSession, sendUserInput, endSession, getSessionStage } from '../client';
+import { logger as rootLogger } from '../shared/logger';
+
+const log = rootLogger.child({ proc: 'smoke-session' });
 
 async function main() {
   const sessionId = `smoke-${nanoid(6)}`;
-  console.log(`Starting session ${sessionId}...`);
+  log.info({ sessionId }, 'starting session');
   await startSession(sessionId);
 
   const turn1 = `turn-${nanoid(6)}`;
   const turn2 = `turn-${nanoid(6)}`;
 
-  console.log('Sending two signals back-to-back...');
+  log.info({ sessionId, turn1, turn2 }, 'sending two signals back-to-back');
   await sendUserInput(sessionId, {
     turnId: turn1,
     prompt: 'Write a one-line TypeScript debounce function.',
@@ -42,15 +45,20 @@ async function main() {
   const start = Date.now();
   while (Date.now() - start < 60_000) {
     try {
-      console.log(`  session stage: ${await getSessionStage(sessionId)}`);
-    } catch {
-      /* might be transient */
+      const stage = await getSessionStage(sessionId);
+      log.info({ sessionId, stage }, 'polled session stage');
+    } catch (err) {
+      // Transient — workflow may be mid-transition. Log at debug.
+      log.debug({ sessionId, err }, 'getSessionStage transient error');
     }
     await new Promise((r) => setTimeout(r, 2000));
   }
 
-  console.log('Ending session...');
+  log.info({ sessionId }, 'ending session');
   await endSession(sessionId);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  rootLogger.fatal({ err }, 'smoke-session crashed');
+  process.exit(1);
+});

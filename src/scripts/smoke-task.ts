@@ -15,6 +15,9 @@ import '../shared/load-env';
 import { nanoid } from 'nanoid';
 import { startTurn, awaitTurnResult, getTurnStage } from '../client';
 import type { TurnInput } from '../shared/types';
+import { logger as rootLogger } from '../shared/logger';
+
+const log = rootLogger.child({ proc: 'smoke-task' });
 
 async function main() {
   const turnId = nanoid(8);
@@ -25,23 +28,37 @@ async function main() {
     conversationHistory: [],
   };
 
-  console.log(`Starting turn ${turnId}...`);
+  log.info({ turnId }, 'starting turn');
   await startTurn(input);
 
   const poll = setInterval(async () => {
     try {
-      console.log(`  stage: ${await getTurnStage(turnId)}`);
-    } catch {
-      /* may have completed */
+      const stage = await getTurnStage(turnId);
+      log.info({ turnId, stage }, 'polled turn stage');
+    } catch (err) {
+      // May have completed; query handle goes away.
+      log.debug({ turnId, err }, 'getTurnStage transient error');
     }
   }, 1000);
 
   const result = await awaitTurnResult(turnId);
   clearInterval(poll);
 
-  console.log('\n=== RESULT ===');
-  console.log(`approved: ${result.review.approved}  reworks: ${result.reworkAttempts}  overruled: ${result.reviewerOverruled}`);
-  console.log(result.content);
+  log.info(
+    {
+      turnId,
+      approved: result.review.approved,
+      reworkAttempts: result.reworkAttempts,
+      reviewerOverruled: result.reviewerOverruled,
+      contentLength: result.content.length,
+    },
+    'turn finished',
+  );
+  // For the actual content, log at info too — useful for quick visual diff.
+  log.info({ turnId, content: result.content }, 'final answer');
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  rootLogger.fatal({ err }, 'smoke-task crashed');
+  process.exit(1);
+});

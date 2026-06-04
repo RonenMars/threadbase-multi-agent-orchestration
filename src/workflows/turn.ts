@@ -13,6 +13,7 @@ import {
   setHandler,
   uuid4,
   workflowInfo,
+  log,
 } from '@temporalio/workflow';
 import type { ProgressEvent, AgentOutputPayload } from '@threadbase/agent-types';
 
@@ -57,6 +58,13 @@ export async function turnWorkflow(input: TurnInput): Promise<TurnResult> {
   let stage = 'processing';
   setHandler(stageQuery, () => stage);
 
+  log.info('turn started', {
+    sessionId,
+    turnId,
+    historyTurns: conversationHistory.length,
+    promptLength: prompt.length,
+  });
+
   const seq = createSeq();
 
   async function emit(partial: Omit<ProgressEvent, 'sessionId' | 'turnId' | 'eventId' | 'seq' | 'timestamp'>): Promise<void> {
@@ -68,6 +76,25 @@ export async function turnWorkflow(input: TurnInput): Promise<TurnResult> {
       seq: seq(),
       timestamp: nowSeconds(),
     };
+    // Stage transitions get an info-level log; agent_output events are
+    // chatter (one per agent per stage) — debug only.
+    if (partial.type === 'stage_transition') {
+      log.info('stage transition', {
+        sessionId,
+        turnId,
+        stage: partial.stage,
+        reworkAttempt: partial.reworkAttempt,
+        seq: ev.seq,
+      });
+    } else {
+      log.debug('progress event emitted', {
+        sessionId,
+        turnId,
+        type: partial.type,
+        stage: partial.stage,
+        seq: ev.seq,
+      });
+    }
     await sendProgressEvent(ev);
   }
 
@@ -148,6 +175,14 @@ export async function turnWorkflow(input: TurnInput): Promise<TurnResult> {
       content: draft.content,
       reviewerOverruled: reviewerOverruled || undefined,
     } satisfies AgentOutputPayload as unknown as Record<string, unknown>,
+  });
+
+  log.info('turn completed', {
+    sessionId,
+    turnId,
+    reworkAttempts,
+    reviewerOverruled,
+    contentLength: draft.content.length,
   });
 
   return {

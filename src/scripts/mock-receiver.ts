@@ -12,7 +12,9 @@ import '../shared/load-env';
 import { createServer } from 'node:http';
 import crypto from 'node:crypto';
 import { config } from '../shared/config';
+import { logger as rootLogger } from '../shared/logger';
 
+const log = rootLogger.child({ proc: 'mock-receiver' });
 const PORT = Number(process.env.MOCK_RECEIVER_PORT ?? 3456);
 
 function verify(body: Buffer, signature: string): boolean {
@@ -31,14 +33,25 @@ const server = createServer((req, res) => {
     if (!verify(body, signature)) {
       res.writeHead(401);
       res.end(JSON.stringify({ error: 'unauthorized' }));
-      console.error(`[mock-receiver] 401 ${req.method} ${req.url}`);
+      log.warn({ method: req.method, url: req.url }, 'webhook 401 — bad signature');
       return;
     }
     try {
       const event = JSON.parse(body.toString('utf8'));
-      console.log(`[mock-receiver] ${event.type.padEnd(18)} seq=${String(event.seq).padStart(2)} turn=${event.turnId} stage=${event.stage ?? '-'} content=${(event.payload?.content ?? '').slice(0, 60).replace(/\n/g, ' ')}`);
+      log.info(
+        {
+          type: event.type,
+          seq: event.seq,
+          turnId: event.turnId,
+          sessionId: event.sessionId,
+          stage: event.stage,
+          reworkAttempt: event.reworkAttempt,
+          contentPreview: (event.payload?.content ?? '').slice(0, 80).replace(/\n/g, ' '),
+        },
+        'webhook received',
+      );
     } catch (err) {
-      console.error('[mock-receiver] parse error', err);
+      log.error({ err }, 'webhook body parse error');
     }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
@@ -46,5 +59,8 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Mock receiver up on http://localhost:${PORT}/internal/sessions/:sessionId/progress`);
+  log.info(
+    { port: PORT, endpoint: `http://localhost:${PORT}/internal/sessions/:sessionId/progress` },
+    'mock receiver up',
+  );
 });

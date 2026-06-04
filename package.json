@@ -10,6 +10,7 @@
     "temporal:down": "docker compose down",
     "temporal:reset": "docker compose down -v",
     "worker": "tsx watch src/worker.ts",
+    "worker:pretty": "tsx watch src/worker.ts | npx pino-pretty",
     "smoke:task": "tsx src/scripts/smoke-task.ts",
     "smoke:session": "tsx src/scripts/smoke-session.ts",
     "smoke:receiver": "tsx src/scripts/mock-receiver.ts",
@@ -26,7 +27,8 @@
     "@temporalio/worker": "^1.11.0",
     "@temporalio/workflow": "^1.11.0",
     "dotenv": "^17.4.2",
-    "nanoid": "^5.0.0"
+    "nanoid": "^5.0.0",
+    "pino": "^10.0.0"
   },
   "devDependencies": {
     "@hono/node-server": "^1.19.0",
@@ -34,6 +36,7 @@
     "@threadbase/streamer": "file:../tb-streamer",
     "@types/node": "^22.0.0",
     "hono": "^4.12.0",
+    "pino-pretty": "^11.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

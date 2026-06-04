@@ -9,7 +9,43 @@
 
 import crypto from 'node:crypto';
 import type { ProgressEvent } from '@threadbase/agent-types';
+import { Context } from '@temporalio/activity';
+import type { Logger } from '@temporalio/common';
 import { config } from '../shared/config';
+import { logger as rootLogger } from '../shared/logger';
+
+/**
+ * Get the activity-context logger when running inside Temporal, or fall back
+ * to the root pino logger when called outside an activity (unit tests, smoke
+ * scripts). The shapes are compatible — both accept `(meta, message)`.
+ */
+function getLogger(): Logger {
+  try {
+    return Context.current().log;
+  } catch {
+    // Not inside an activity context — use the root pino logger directly.
+    // Pino satisfies the Temporal Logger shape (via pinoToTemporalLogger
+    // pattern), so we return a thin shim.
+    return {
+      trace: (msg, meta) => (meta ? rootLogger.trace(meta, msg) : rootLogger.trace(msg)),
+      debug: (msg, meta) => (meta ? rootLogger.debug(meta, msg) : rootLogger.debug(msg)),
+      info: (msg, meta) => (meta ? rootLogger.info(meta, msg) : rootLogger.info(msg)),
+      warn: (msg, meta) => (meta ? rootLogger.warn(meta, msg) : rootLogger.warn(msg)),
+      error: (msg, meta) => (meta ? rootLogger.error(meta, msg) : rootLogger.error(msg)),
+      log: (level, msg, meta) => {
+        const fn = (rootLogger as unknown as Record<string, (m: unknown, s?: string) => void>)[
+          level.toLowerCase()
+        ];
+        if (fn) {
+          if (meta) fn(meta, msg);
+          else fn(msg);
+        } else {
+          rootLogger.info({ level }, msg);
+        }
+      },
+    } as Logger;
+  }
+}
 
 interface WebhookConfig {
   url: string;
@@ -82,25 +118,44 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  */
 export async function sendProgressEvent(ev: ProgressEvent): Promise<void> {
   const cfg = readConfig();
+  const log = getLogger();
+  const baseMeta = {
+    eventId: ev.eventId,
+    sessionId: ev.sessionId,
+    turnId: ev.turnId,
+    type: ev.type,
+    stage: ev.stage,
+  };
   let delay = cfg.firstDelayMs;
 
   for (let attempt = 1; attempt <= cfg.attempts; attempt += 1) {
     try {
       const { ok, status } = await postOnce(cfg, ev);
-      if (ok) return;
-      // 4xx (e.g. 401 from bad HMAC) is a config error, not transient — log and stop.
+      if (ok) {
+        log.debug('progress webhook ok', { ...baseMeta, attempt, status });
+        return;
+      }
+      // 4xx (e.g. 401 from bad HMAC, 404 unknown session) is a config error,
+      // not transient — log and stop.
       if (status >= 400 && status < 500) {
-        // eslint-disable-next-line no-console
-        console.warn(`[progress] non-retryable ${status} for ${ev.eventId}; giving up`);
+        log.warn('progress webhook non-retryable; giving up', { ...baseMeta, attempt, status });
         return;
       }
       // 5xx — fall through to retry.
-      // eslint-disable-next-line no-console
-      console.warn(`[progress] attempt ${attempt}/${cfg.attempts} got ${status} for ${ev.eventId}`);
+      log.warn('progress webhook 5xx, will retry', {
+        ...baseMeta,
+        attempt,
+        status,
+        attemptsRemaining: cfg.attempts - attempt,
+      });
     } catch (err) {
       // Transport error (timeout, ECONNREFUSED, etc.). Treat as retryable.
-      // eslint-disable-next-line no-console
-      console.warn(`[progress] attempt ${attempt}/${cfg.attempts} threw for ${ev.eventId}:`, err);
+      log.warn('progress webhook transport error, will retry', {
+        ...baseMeta,
+        attempt,
+        attemptsRemaining: cfg.attempts - attempt,
+        err: err instanceof Error ? err.message : String(err),
+      });
     }
 
     if (attempt < cfg.attempts) {
@@ -109,6 +164,5 @@ export async function sendProgressEvent(ev: ProgressEvent): Promise<void> {
     }
   }
   // All attempts spent. Log and return — never throw.
-  // eslint-disable-next-line no-console
-  console.warn(`[progress] gave up after ${cfg.attempts} attempts for ${ev.eventId}`);
+  log.warn('progress webhook gave up', { ...baseMeta, attempts: cfg.attempts });
 }
