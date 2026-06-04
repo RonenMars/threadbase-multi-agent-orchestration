@@ -26,3 +26,17 @@ export interface Result {
   review: Review;
   reworkAttempts: number;
 }
+
+import type { ConversationTurn } from '@threadbase/agent-types';
+
+/**
+ * Per-turn child workflow input. The orchestrator passes this when starting a
+ * `turnWorkflow`. It is built by stitching the user's prompt onto a snapshot
+ * of conversation history that tb-streamer composed.
+ */
+export interface TurnInput {
+  sessionId: string;
+  turnId: string;
+  prompt: string;
+  conversationHistory: ConversationTurn[];
+}

@@ -1,14 +1,22 @@
-// ============================================================================
-// CLIENT helper — import this into your Threadbase backend.
+// src/client.ts
 //
-// The backend's only jobs are to START a workflow when a message arrives and to
-// OBSERVE it (query its stage, await its result). It never runs agent logic.
-// ============================================================================
+// Temporal client helpers used by tb-streamer (and by the local smoke scripts).
+//
+// Two public surfaces:
+// - Session API (multi-agent mode): startSession + sendUserInput.
+// - Legacy task API (single-shot for ad-hoc smoke): startTask + getStage + awaitResult.
+//   The legacy API is kept so the existing `smoke:task` script still works.
 
 import { Connection, Client } from '@temporalio/client';
-import { taskPipelineWorkflow, stageQuery } from './workflows';
 import { config } from './shared/config';
-import type { Task, Result } from './shared/types';
+import {
+  orchestratorWorkflow,
+  turnWorkflow,
+  stageQuery,
+  userInputSignal,
+} from './workflows';
+import type { UserInputSignal } from '@threadbase/agent-types';
+import type { TurnInput } from './shared/types';
 
 let client: Client | undefined;
 
@@ -20,25 +28,62 @@ export async function getClient(): Promise<Client> {
   return client;
 }
 
-/** Start the pipeline for a task. Returns immediately; work runs durably. */
-export async function startTask(task: Task): Promise<string> {
+const sessionWorkflowId = (sessionId: string): string => `session-${sessionId}`;
+
+// ─── multi-agent session API ──────────────────────────────────────────────
+
+/**
+ * Start the long-lived orchestrator workflow for a session. Idempotent on the
+ * Temporal side: starting twice with the same sessionId is a no-op because of
+ * the workflowId reuse policy.
+ */
+export async function startSession(sessionId: string): Promise<string> {
   const c = await getClient();
-  const handle = await c.workflow.start(taskPipelineWorkflow, {
+  const handle = await c.workflow.start(orchestratorWorkflow, {
     taskQueue: config.taskQueue,
-    workflowId: `task-${task.id}`, // de-dupes: the same id won't double-run
-    args: [task],
+    workflowId: sessionWorkflowId(sessionId),
+    args: [sessionId],
+    workflowIdReusePolicy: 'REJECT_DUPLICATE',
   });
   return handle.workflowId;
 }
 
-/** Ask a running workflow what stage it's in (queued/processing/review/...). */
-export async function getStage(taskId: string): Promise<string> {
+/** Send a user message to a running session. */
+export async function sendUserInput(sessionId: string, signal: UserInputSignal): Promise<void> {
   const c = await getClient();
-  return c.workflow.getHandle(`task-${taskId}`).query(stageQuery);
+  await c.workflow.getHandle(sessionWorkflowId(sessionId)).signal(userInputSignal, signal);
 }
 
-/** Block until the pipeline finishes and return its result. */
-export async function awaitResult(taskId: string): Promise<Result> {
+/** Cancel a session (cleanly ends the orchestrator workflow). */
+export async function endSession(sessionId: string): Promise<void> {
   const c = await getClient();
-  return c.workflow.getHandle(`task-${taskId}`).result();
+  await c.workflow.getHandle(sessionWorkflowId(sessionId)).cancel();
+}
+
+/** Query the orchestrator's current stage (returns 'idle' when no turn is active). */
+export async function getSessionStage(sessionId: string): Promise<string> {
+  const c = await getClient();
+  return c.workflow.getHandle(sessionWorkflowId(sessionId)).query(stageQuery);
+}
+
+// ─── legacy single-turn API (smoke only) ─────────────────────────────────
+
+export async function startTurn(turnInput: TurnInput): Promise<string> {
+  const c = await getClient();
+  const handle = await c.workflow.start(turnWorkflow, {
+    taskQueue: config.taskQueue,
+    workflowId: `turn-${turnInput.turnId}`,
+    args: [turnInput],
+  });
+  return handle.workflowId;
+}
+
+export async function awaitTurnResult(turnId: string) {
+  const c = await getClient();
+  return c.workflow.getHandle(`turn-${turnId}`).result();
+}
+
+export async function getTurnStage(turnId: string): Promise<string> {
+  const c = await getClient();
+  return c.workflow.getHandle(`turn-${turnId}`).query(stageQuery);
 }

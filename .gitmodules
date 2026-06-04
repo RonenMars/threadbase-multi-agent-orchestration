@@ -1,0 +1,3 @@
+[submodule "packages/agent-types"]
+	path = packages/agent-types
+	url = https://github.com/RonenMars/threadbase-agent-types.git
