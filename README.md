@@ -79,3 +79,20 @@ WebSocket layer (the workflow stays the durable source of truth).
 `auto-setup` is dev-only. For production use **Temporal Cloud** (managed) or the
 `temporalio/server` image against a managed Postgres; only the connection
 address/credentials in `.env` change — workflow and worker code stay identical.
+
+## Relationship to Claude Code dynamic workflows
+
+[Claude Code dynamic workflows](https://claude.com/blog/introducing-dynamic-workflows-in-claude-code) and this service solve different problems. Dynamic workflows are an *interactive*, session-scoped fan-out tool for ad-hoc analysis; this service is a *durable* production pipeline driven by the Threadbase backend.
+
+| Dimension | Claude Code dynamic workflows | threadbase-orchestration |
+|---|---|---|
+| **Trigger** | Developer in a Claude Code session | Backend HTTP call → `startTask(...)` |
+| **Durability** | Session-scoped; dies with the session | Event-sourced; survives crashes and restarts |
+| **Retries** | Internal verification loops | Per-activity `retryPolicy` enforced by Temporal |
+| **Scale model** | One session, many subagents | Many workers on the `agent-tasks` queue |
+| **Cost** | Substantially more tokens than a normal session | One LLM call per agent stage per task |
+| **Best for** | One-off codebase audits, migrations, deep review | Reliably processing every inbound message |
+
+Dynamic workflows can't replace this pipeline (no durability, no per-step retries, no caller-facing workflow ID). This pipeline can't replace dynamic workflows (over-engineered for ad-hoc analysis). They compose well: use dynamic workflows *on this repo* for migrations and audits.
+
+Full comparison and use-case guidance: [docs/comparisons/claude-code-dynamic-workflows.md](docs/comparisons/claude-code-dynamic-workflows.md).
