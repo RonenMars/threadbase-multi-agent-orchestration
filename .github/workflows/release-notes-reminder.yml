@@ -35,33 +35,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          # List ADDED files only (status A). A modified existing notes file
-          # does not satisfy the convention — every milestone gets its own
-          # new file.
-          ADDED_NOTES=$(gh pr diff "$PR_NUMBER" --name-only --json files \
-            --jq '.files[] | select(.additions > 0 and .deletions == 0) | .path' \
-            2>/dev/null \
-            | grep -E '^docs/release-notes/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+\.md$' \
+          # Only ADDED files count — modifying an existing notes file is not
+          # a new milestone. _template.md and README.md are excluded so the
+          # scaffolding PR itself does not register as a milestone.
+          ADDED_NOTES=$(gh pr view "$PR_NUMBER" --json files \
+            --jq '.files[] | select(.changeType == "ADDED") | .path' \
+            | grep -E '^docs/release-notes/[^/]+\.md$' \
+            | grep -vE '^docs/release-notes/(_template|README)\.md$' \
             || true)
-
-          # Fallback: older gh versions don't accept --json on `pr diff`.
-          # Use the patch output and grep for `+++ b/docs/release-notes/...`
-          # on newly-added files only (preceded by `--- /dev/null`).
-          if [ -z "$ADDED_NOTES" ]; then
-            ADDED_NOTES=$(gh pr diff "$PR_NUMBER" 2>/dev/null \
-              | awk '
-                  /^--- \/dev\/null$/ { next_is_new = 1; next }
-                  /^\+\+\+ b\// && next_is_new {
-                    sub(/^\+\+\+ b\//, "", $0)
-                    print $0
-                    next_is_new = 0
-                    next
-                  }
-                  { next_is_new = 0 }
-                ' \
-              | grep -E '^docs/release-notes/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+\.md$' \
-              || true)
-          fi
 
           if [ -n "$ADDED_NOTES" ]; then
             echo "has_notes=true" >> "$GITHUB_OUTPUT"
