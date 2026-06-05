@@ -1,0 +1,81 @@
+name: Release notes reminder
+
+# Reminder-only workflow. NEVER fails or blocks merge — it just posts a
+# sticky comment on milestone PRs that don't include a new release-notes
+# file. The user explicitly does not want docs gating production code.
+
+on:
+  pull_request:
+    types: [labeled, opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  remind:
+    name: Remind about release notes
+    runs-on: ubuntu-latest
+
+    # Only run on PRs that carry the `milestone` label. The `labeled` event
+    # fires per-label, so we also gate on the current label set to keep
+    # `opened` / `synchronize` events cheap.
+    if: contains(github.event.pull_request.labels.*.name, 'milestone')
+
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Detect new release-notes file
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Only ADDED files count — modifying an existing notes file is not
+          # a new milestone. _template.md and README.md are excluded so the
+          # scaffolding PR itself does not register as a milestone.
+          ADDED_NOTES=$(gh pr view "$PR_NUMBER" --json files \
+            --jq '.files[] | select(.changeType == "ADDED") | .path' \
+            | grep -E '^docs/release-notes/[^/]+\.md$' \
+            | grep -vE '^docs/release-notes/(_template|README)\.md$' \
+            || true)
+
+          if [ -n "$ADDED_NOTES" ]; then
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+            echo "Found new release-notes file(s):"
+            echo "$ADDED_NOTES"
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+            echo "No new release-notes file detected in this PR."
+          fi
+
+      - name: Post reminder comment (no notes detected)
+        if: steps.detect.outputs.has_notes == 'false'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          # Stable marker so the same comment is updated on each event
+          # rather than appended. peter-evans/create-or-update-comment finds
+          # an existing comment by `body-includes` and edits it in place.
+          body-includes: '<!-- release-notes-reminder -->'
+          edit-mode: replace
+          body: |
+            <!-- release-notes-reminder -->
+            🟡 **Milestone PR** — no new release notes detected in `docs/release-notes/`. Run `/write-release-notes` locally before merging, or remove the `milestone` label if this isn't a milestone after all.
+
+            _This is a reminder, not a block. The PR can still merge._
+
+      - name: Update reminder comment (notes detected)
+        if: steps.detect.outputs.has_notes == 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: '<!-- release-notes-reminder -->'
+          edit-mode: replace
+          body: |
+            <!-- release-notes-reminder -->
+            🟢 **Milestone PR** — release notes detected in `docs/release-notes/`. Thanks!
