@@ -51,6 +51,17 @@ jobs:
         with:
           submodules: recursive
 
+      # `npm run typecheck` (root tsc) resolves @threadbase/agent-types via its
+      # built dist/. The run-ci action only restores node_modules and may miss
+      # the cache, in which case dist/ is absent. Build it explicitly so this
+      # job doesn't depend on the Setup job's cache being warm.
+      - name: Build @threadbase/agent-types
+        if: needs.gate.outputs.skip != 'true'
+        uses: ./.github/actions/run-ci
+        with:
+          node-version: 20
+          command: build:types
+
       - name: Typecheck root
         if: needs.gate.outputs.skip != 'true'
         uses: ./.github/actions/run-ci

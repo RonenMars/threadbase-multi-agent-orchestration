@@ -1,0 +1,95 @@
+name: Update agent-types submodule
+
+# Bumps the packages/agent-types submodule to the version published by the
+# agent-types repo and opens an auto-merging PR against main. Fires when
+# agent-types publishes a release (repository_dispatch type
+# "agent-types-released", client_payload.tag = vX.Y.Z), or run manually.
+#
+# Setup required for the automatic trigger:
+#   1. agent-types' notify-consumers.yml dispatches this event using a PAT
+#      stored there as CONSUMER_DISPATCH_PAT (the default GITHUB_TOKEN cannot
+#      dispatch across repos).
+#   2. Add a PAT secret AGENT_TYPES_BUMP_PAT_FOR_MULTI_AGENT here (fine-grained:
+#      Contents read/write + Pull requests read/write on this repo). PRs created
+#      with the default GITHUB_TOKEN do NOT trigger CI (GitHub's recursion
+#      guard), so auto-merge would never see required checks pass. The PAT makes
+#      the bump PR run CI and lets `gh pr merge --auto` complete.
+
+on:
+  repository_dispatch:
+    types: [agent-types-released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "agent-types tag to pin (e.g. v0.2.0). Defaults to the submodule's latest v* tag when omitted."
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Bump packages/agent-types to release tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # Use the PAT so the resulting PR triggers CI and can auto-merge.
+          token: ${{ secrets.AGENT_TYPES_BUMP_PAT_FOR_MULTI_AGENT || github.token }}
+
+      - name: Resolve target tag
+        id: tag
+        env:
+          # client_payload is attacker-controllable; validated below before use.
+          DISPATCH_TAG: ${{ github.event.client_payload.tag }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          git -C packages/agent-types fetch --tags --force origin
+          raw="${DISPATCH_TAG:-$INPUT_TAG}"
+          if [ -z "$raw" ]; then
+            raw=$(git -C packages/agent-types tag -l 'v*' | sort -V | tail -1)
+          fi
+          # Normalize to vX.Y.Z and reject anything that is not a plain tag
+          # before it reaches git / gh.
+          tag="v${raw#v}"
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::refusing non-semver tag '$tag'"; exit 1
+          fi
+          if ! git -C packages/agent-types rev-parse --verify -q "$tag^{commit}" >/dev/null; then
+            echo "::error::tag '$tag' not found in agent-types"; exit 1
+          fi
+          current=$(git -C packages/agent-types rev-parse HEAD)
+          target=$(git -C packages/agent-types rev-parse "$tag^{commit}")
+          echo "tag=$tag"          >> "$GITHUB_OUTPUT"
+          echo "current=$current"  >> "$GITHUB_OUTPUT"
+          echo "target=$target"    >> "$GITHUB_OUTPUT"
+          echo "Target $tag ($target). Current submodule: $current."
+
+      - name: Already up to date
+        if: steps.tag.outputs.current == steps.tag.outputs.target
+        run: echo "packages/agent-types already at ${{ steps.tag.outputs.tag }} — nothing to do."
+
+      - name: Open bump PR
+        if: steps.tag.outputs.current != steps.tag.outputs.target
+        env:
+          GH_TOKEN: ${{ secrets.AGENT_TYPES_BUMP_PAT_FOR_MULTI_AGENT || github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          branch="chore/bump-agent-types-${TAG}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "Branch $branch already exists — a bump PR is already open. Skipping."
+            exit 0
+          fi
+          git -C packages/agent-types checkout --quiet "$TAG"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add packages/agent-types
+          git commit -m "chore: bump packages/agent-types to ${TAG}"
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore: bump packages/agent-types to ${TAG}" \
+            --body "Automated submodule bump to agent-types \`${TAG}\`, triggered by an agent-types release. Merges automatically once CI is green."
+          gh pr merge --auto --squash "$branch"
