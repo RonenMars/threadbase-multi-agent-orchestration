@@ -1,10 +1,11 @@
 // Integration scenario 4 — HMAC rejection.
 //
-// Sends a progress event via direct HTTP fetch with three bad-signature
+// Sends a progress event via direct HTTP fetch with four bad-signature
 // variants:
 //   - missing X-Progress-Signature header
 //   - wrong signature (random hex)
 //   - signature from a different secret
+//   - body-only signature (no timestamp in the signed string)
 //
 // Verifies for each:
 //   - 401 response
@@ -22,8 +23,11 @@ import { createTestRig, makeStubActivities, type TestRig } from "../harness";
 
 const SECRET = "integration-secret";
 
-function sign(body: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(body).digest("hex");
+// The receiver contract: HMAC over `${X-Timestamp}.${rawBody}`.
+const TS = String(Math.floor(Date.now() / 1000));
+
+function sign(body: string, secret: string, ts: string = TS): string {
+  return crypto.createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
 }
 
 async function postRaw(
@@ -35,7 +39,7 @@ async function postRaw(
   const raw = JSON.stringify(body);
   const headers: Record<string, string> = {
     "content-type": "application/json",
-    "x-progress-timestamp": String(Math.floor(Date.now() / 1000)),
+    "x-timestamp": TS,
     "x-progress-event-id": (body as { eventId: string }).eventId,
   };
   if (signature !== null) {
@@ -115,6 +119,25 @@ describe("integration: HMAC rejection", () => {
       const wrongSig = sign(JSON.stringify(event), "not-the-real-secret");
 
       const res = await postRaw(rig.receiverUrl, sessionId, event, wrongSig);
+      expect(res.status).toBe(401);
+      expect(rig.sink.captured).toHaveLength(0);
+
+      const files = await readdir(rig.conversationsDir);
+      expect(files).toHaveLength(0);
+    },
+  );
+
+  it(
+    "rejects a body-only signature with 401, no broadcast, no JSONL",
+    async () => {
+      const sessionId = `sess-${nanoid(6)}`;
+      const event = makeEvent(sessionId, "evt-body-only");
+      const bodyOnly = crypto
+        .createHmac("sha256", SECRET)
+        .update(JSON.stringify(event))
+        .digest("hex");
+
+      const res = await postRaw(rig.receiverUrl, sessionId, event, bodyOnly);
       expect(res.status).toBe(401);
       expect(rig.sink.captured).toHaveLength(0);
 

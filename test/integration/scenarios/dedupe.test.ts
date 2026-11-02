@@ -16,8 +16,8 @@ import { createTestRig, makeStubActivities, type TestRig } from "../harness";
 
 const SECRET = "integration-secret"; // matches harness default
 
-function sign(body: string): string {
-  return crypto.createHmac("sha256", SECRET).update(body).digest("hex");
+function sign(ts: string, body: string): string {
+  return crypto.createHmac("sha256", SECRET).update(`${ts}.${body}`).digest("hex");
 }
 
 async function postEvent(
@@ -26,12 +26,13 @@ async function postEvent(
   body: object,
 ): Promise<{ status: number; json: { ok?: boolean; deduped?: boolean } }> {
   const raw = JSON.stringify(body);
+  const ts = String(Math.floor(Date.now() / 1000));
   const res = await fetch(`${baseUrl}/internal/sessions/${sessionId}/progress`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-progress-signature": sign(raw),
-      "x-progress-timestamp": String(Math.floor(Date.now() / 1000)),
+      "x-progress-signature": sign(ts, raw),
+      "x-timestamp": ts,
       "x-progress-event-id": (body as { eventId: string }).eventId,
     },
     body: raw,
