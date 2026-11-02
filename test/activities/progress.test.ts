@@ -87,8 +87,49 @@ describe('sendProgressEvent', () => {
     const rcv = received[0];
     expect(rcv.headers['x-progress-event-id']).toBe('evt_42');
 
-    const expected = crypto.createHmac('sha256', SECRET).update(rcv.body).digest('hex');
+    const ts = rcv.headers['x-timestamp'];
+    expect(ts).toMatch(/^\d+$/);
+    expect(Math.abs(Number(ts) - Math.floor(Date.now() / 1000))).toBeLessThanOrEqual(5);
+    const expected = crypto.createHmac('sha256', SECRET).update(`${ts}.${rcv.body.toString('utf8')}`).digest('hex');
     expect(rcv.headers['x-progress-signature']).toBe(expected);
+    const bodyOnly = crypto.createHmac('sha256', SECRET).update(rcv.body).digest('hex');
+    expect(rcv.headers['x-progress-signature']).not.toBe(bodyOnly);
+  });
+
+  it('re-signs each retry with a fresh timestamp', async () => {
+    const received: Array<{ headers: Record<string, string>; body: Buffer }> = [];
+    ({ server, baseUrl } = await startServer((req) => {
+      received.push(req);
+      return { status: received.length < 3 ? 500 : 200 };
+    }));
+    process.env.PROGRESS_WEBHOOK_URL = `${baseUrl}/internal/sessions`;
+    vi.resetModules();
+    const mod = await import('../../src/activities/progress');
+    sendProgressEvent = mod.sendProgressEvent;
+    __resetWebhookConfigForTests = mod.__resetWebhookConfigForTests;
+    __resetWebhookConfigForTests();
+
+    // Every Date.now() call moves the clock 10s, so a timestamp reused across
+    // attempts would show up as a repeat.
+    const realNow = Date.now();
+    let ticks = 0;
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => realNow + 10_000 * ticks++);
+    try {
+      await sendProgressEvent(makeEvent({ eventId: 'evt_resign' }));
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(received).toHaveLength(3);
+    const stamps = received.map((r) => r.headers['x-timestamp']);
+    expect(new Set(stamps).size).toBe(3);
+    for (const r of received) {
+      const expected = crypto
+        .createHmac('sha256', SECRET)
+        .update(`${r.headers['x-timestamp']}.${r.body.toString('utf8')}`)
+        .digest('hex');
+      expect(r.headers['x-progress-signature']).toBe(expected);
+    }
   });
 
   it('retries on 5xx then succeeds', async () => {
