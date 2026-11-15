@@ -218,9 +218,9 @@ export interface AgentOutputPayload {
 Full transport described in `signed-http-webhook-guide.md` (committed at repo root). Summary for cross-reference:
 
 - **Endpoint:** `POST /internal/sessions/:sessionId/progress`
-- **Headers:** `Content-Type: application/json`, `X-Progress-Signature: <hmac-sha256>`, `X-Progress-Timestamp: <unix-seconds>`, `X-Progress-Event-Id: <uuid>`
+- **Headers:** `Content-Type: application/json`, `X-Progress-Signature: <hmac-sha256>`, `X-Timestamp: <unix-seconds>`, `X-Progress-Event-Id: <uuid>`
 - **Body:** `ProgressEvent` from §3.3, serialized as JSON.
-- **Auth:** HMAC-SHA256 over the raw body, using `PROGRESS_HMAC_SECRET`.
+- **Auth:** hex HMAC-SHA256 over `${X-Timestamp}.${rawBody}`, using `PROGRESS_HMAC_SECRET`. tb-streamer rejects a missing or stale timestamp, or a body-only signature, with 401. Each retry is re-signed with a fresh timestamp.
 - **Idempotency:** `eventId` is the dedupe key. See §7.1.
 - **Failure mode:** best-effort. Worker treats any non-2xx as fire-and-forget after retries (§7.3). tb-streamer 401s on bad signature, 200s on duplicate.
 
