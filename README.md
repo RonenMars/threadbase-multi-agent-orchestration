@@ -1,84 +1,106 @@
 # threadbase-orchestration
 
-Durable multi-agent task orchestration for Threadbase, built on **Temporal**.
-Incoming messages run through a pipeline of AI agents (worker → reviewer →
-sign-off), with each stage independently retriable and the whole workflow
-surviving crashes — no Kafka, no hand-rolled queue.
+The Temporal worker behind Threadbase's multi-agent mode.
+Each streamer session runs one long-lived workflow, and each message the phone sends runs a turn through a pipeline of agents (worker → reviewer → sign-off), with every step retried by Temporal and the whole session surviving crashes.
 
 ```
-Threadbase backend (client) ──start──▶ Temporal server (durable state)
-        ▲                                      │ dispatches tasks
-        │ query / result                       ▼
-        └────────────────────────  Worker process (AI-agent activities → Claude)
+phone ──▶ tb-streamer ──start / signal──▶ Temporal ──▶ this worker (agent activities → Claude)
+            ▲                                              │
+            └──────── signed progress webhook ─────────────┘
 ```
+
+## How a session runs
+
+- **tb-streamer starts the session.** With `MULTI_AGENT_FLOW=true`, it starts `orchestratorWorkflow(sessionId)` with id `session-<sessionId>` on the `agent-tasks` queue.
+- **Each message is a `userInput` signal.** The orchestrator queues signals and runs them one at a time as child `turnWorkflow`s.
+- **A turn moves through stages:** `processing` (worker drafts), `review` (reviewer scores), `rework` (worker revises, up to 2 times), `sign-off`, `done`.
+- **Progress goes back by webhook.** Every stage change and agent answer is POSTed to `PROGRESS_WEBHOOK_URL/<sessionId>/progress`, signed as described below.
+- **Every turn ends** with an `agent_output` at `done` or a `terminal_failure`, which releases the streamer's turn lock.
+- **Queries:** `stage` returns the current stage, `queueDepth` the number of waiting inputs.
+
+The wire types (`ProgressEvent`, `UserInputSignal`, stages) come from [`@threadbase-sh/agent-types`](https://www.npmjs.com/package/@threadbase-sh/agent-types).
+
+## Webhook signing
+
+Each POST carries:
+
+- `X-Timestamp`: unix seconds; the streamer accepts 300 seconds of clock skew.
+- `X-Progress-Signature`: hex HMAC-SHA256 of `"<timestamp>.<raw body>"` keyed by `PROGRESS_HMAC_SECRET`.
+- `X-Progress-Event-Id`: the event's id, which the streamer uses to drop duplicates.
+
+A retry is signed again with a fresh timestamp.
+A 4xx response is final; 5xx and network errors are retried with backoff.
+The full scheme is in [`signed-http-webhook-guide.md`](signed-http-webhook-guide.md).
 
 ## Layout
 
-| File | Role |
+| Path | Role |
 |---|---|
-| `docker-compose.yml` | Local Temporal + Postgres + Web UI |
-| `src/shared/types.ts` | JSON-serializable domain types |
-| `src/shared/config.ts` | Connection / model config from env |
-| `src/activities.ts` | **The AI agents.** All LLM calls + I/O live here |
-| `src/workflows.ts` | **The pipeline.** Deterministic orchestration |
-| `src/worker.ts` | The agent process (your scalable worker pool) |
-| `src/client.ts` | Helper your Threadbase backend imports |
-| `src/starter.ts` | Demo script: kick off one task and watch it |
+| `src/workflows/orchestrator.ts` | The session workflow: signal queue, one turn at a time |
+| `src/workflows/turn.ts` | One turn: worker → reviewer → rework → sign-off |
+| `src/workflows/signals.ts` | `userInput` signal, `stage` and `queueDepth` queries |
+| `src/activities/agents.ts` | The agents: every LLM call lives here |
+| `src/activities/progress.ts` | The signed progress webhook |
+| `src/client.ts` | Start, signal, query and end sessions (used by the smoke scripts) |
+| `src/worker.ts` | The worker process |
+| `src/scripts/` | Smoke scripts and a mock webhook receiver |
+| `test/integration/` | Worker and the real streamer progress route in one process |
 
 ## Run it
 
 ```bash
-# 1. install
 npm install
-
-# 2. start Temporal (UI at http://localhost:8080)
-npm run temporal:up
-
-# 3. configure
-cp .env.example .env        # set ANTHROPIC_API_KEY
-export $(grep -v '^#' .env | xargs)   # or use your own dotenv loader
-
-# 4. start the agent worker (leave running)
-npm run worker
-
-# 5. in another terminal, kick off a task
-npm run kickoff
+cp .env.example .env              # set ANTHROPIC_API_KEY
+npm run temporal:up               # Temporal on :7233, UI on http://localhost:8080
+npm run worker                    # leave running
 ```
 
-Watch the execution live in the Web UI at <http://localhost:8080>.
+Then either:
 
-Reset everything (including the DB volume): `npm run temporal:reset`.
+- **Against the streamer:** run tb-streamer with `MULTI_AGENT_FLOW=true` and the same `PROGRESS_HMAC_SECRET`, and point `PROGRESS_WEBHOOK_URL` at its `/internal/sessions`.
+- **Without the streamer:** `npm run smoke:receiver` in one terminal and `npm run smoke:session` in another.
+
+`npm run temporal:reset` wipes Temporal's database.
+
+## Configuration
+
+| Variable | Default |
+|---|---|
+| `TEMPORAL_ADDRESS` | `localhost:7233` |
+| `TEMPORAL_NAMESPACE` | `default` |
+| `TEMPORAL_TASK_QUEUE` | `agent-tasks` |
+| `ANTHROPIC_API_KEY` | required |
+| `AGENT_MODEL` | `claude-opus-4-7` |
+| `PROGRESS_WEBHOOK_URL` | `http://localhost:3456/internal/sessions` |
+| `PROGRESS_HMAC_SECRET` | `dev-secret-change-me`; must match the streamer's |
+| `PROGRESS_WEBHOOK_ATTEMPTS` | `3` |
+| `PROGRESS_WEBHOOK_FIRST_DELAY_MS` | `200` |
+| `PROGRESS_WEBHOOK_BACKOFF` | `4` |
+| `PROGRESS_WEBHOOK_TIMEOUT_MS` | `2000` |
+
+## Checks
+
+```bash
+npm run typecheck && npm test     # unit and integration tests; no Temporal server or API key needed
+```
 
 ## Key rules
 
-- **Workflow code is deterministic** — no network/DB/`Date.now()`/`Math.random()`.
-  All side effects go in activities, which Temporal records and replays.
-- **Activities are the AI agents** — non-determinism (LLM calls) belongs here and
-  is retried automatically per the policy in `workflows.ts`.
-- **Scale by running more workers** on the `agent-tasks` task queue. No code change.
+- **Workflow code is deterministic:** no network, clock or randomness in `src/workflows/`; side effects go in activities, which Temporal records and replays.
+- **Event ids come from `workflow.uuid4()`,** so a replayed workflow sends the same ids and the streamer drops the duplicates.
+- **Scale by running more workers** on the `agent-tasks` queue.
 
-## Wiring into Threadbase
+## Known limits
 
-In your message handler, import from `src/client.ts`:
+- Sign-off always approves; there is no human approval step yet.
+- Agents answer as text only: no tools and no access to the session's repo.
+- The orchestrator never continues as new, so a very long session grows its history without bound.
+- tb-streamer does not end the session workflow when a session is killed.
+  To end every running session workflow (this also ends live sessions):
 
-```ts
-import { startTask } from './client';
-
-app.post('/messages', async (req, res) => {
-  const workflowId = await startTask(toTask(req.body));
-  res.json({ workflowId }); // returns instantly; pipeline runs durably
-});
-```
-
-For live UI updates, either poll `getStage()` or have activities publish
-progress to Redis pub/sub keyed by `task.sessionId` and relay over your existing
-WebSocket layer (the workflow stays the durable source of truth).
-
-## Production
-
-`auto-setup` is dev-only. For production use **Temporal Cloud** (managed) or the
-`temporalio/server` image against a managed Postgres; only the connection
-address/credentials in `.env` change — workflow and worker code stay identical.
+  ```bash
+  temporal workflow terminate --query 'WorkflowType="orchestratorWorkflow" AND ExecutionStatus="Running"' --reason "orphaned session"
+  ```
 
 ## Relationship to Claude Code dynamic workflows
 
@@ -86,7 +108,7 @@ address/credentials in `.env` change — workflow and worker code stay identical
 
 | Dimension | Claude Code dynamic workflows | threadbase-orchestration |
 |---|---|---|
-| **Trigger** | Developer in a Claude Code session | Backend HTTP call → `startTask(...)` |
+| **Trigger** | Developer in a Claude Code session | A message from the phone, via tb-streamer |
 | **Durability** | Session-scoped; dies with the session | Event-sourced; survives crashes and restarts |
 | **Retries** | Internal verification loops | Per-activity `retryPolicy` enforced by Temporal |
 | **Scale model** | One session, many subagents | Many workers on the `agent-tasks` queue |
