@@ -2,6 +2,7 @@
   "name": "threadbase-orchestration",
   "version": "0.1.0",
   "private": true,
+  "workspaces": ["packages/*"],
   "description": "Durable multi-agent task orchestration for Threadbase, built on Temporal.",
   "type": "commonjs",
   "scripts": {
@@ -14,7 +15,10 @@
     "smoke:session": "tsx src/scripts/smoke-session.ts",
     "smoke:receiver": "tsx src/scripts/mock-receiver.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:types": "npm --workspace @threadbase-sh/agent-types run build",
+    "typecheck:types": "npm --workspace @threadbase-sh/agent-types run typecheck",
+    "test:types": "npm --workspace @threadbase-sh/agent-types test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
@@ -22,7 +26,6 @@
     "@temporalio/client": "^1.11.0",
     "@temporalio/worker": "^1.11.0",
     "@temporalio/workflow": "^1.11.0",
-    "@threadbase-sh/agent-types": "^1.0.0",
     "dotenv": "^17.4.2",
     "nanoid": "^5.0.0",
     "pino": "^10.0.0"

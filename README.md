@@ -18,7 +18,8 @@ phone ──▶ tb-streamer ──start / signal──▶ Temporal ──▶ thi
 - **Every turn ends** with an `agent_output` at `done` or a `terminal_failure`, which releases the streamer's turn lock.
 - **Queries:** `stage` returns the current stage, `queueDepth` the number of waiting inputs.
 
-The wire types (`ProgressEvent`, `UserInputSignal`, stages) come from [`@threadbase-sh/agent-types`](https://www.npmjs.com/package/@threadbase-sh/agent-types).
+The wire types (`ProgressEvent`, `UserInputSignal`, stages) come from `@threadbase-sh/agent-types`, the [agent-types](https://github.com/RonenMars/threadbase-agent-types) repo checked out at `packages/agent-types` as a submodule pinned to a release tag.
+Each agent-types release opens a PR here that bumps the submodule (`.github/workflows/update-agent-types.yml`).
 
 ## Webhook signing
 
@@ -44,12 +45,15 @@ The full scheme is in [`signed-http-webhook-guide.md`](signed-http-webhook-guide
 | `src/client.ts` | Start, signal, query and end sessions (used by the smoke scripts) |
 | `src/worker.ts` | The worker process |
 | `src/scripts/` | Smoke scripts and a mock webhook receiver |
+| `packages/agent-types/` | The wire types (submodule) |
 | `test/integration/` | Worker and the real streamer progress route in one process |
 
 ## Run it
 
 ```bash
+git submodule update --init      # packages/agent-types
 npm install
+npm run build:types               # the root typecheck reads its dist/
 cp .env.example .env              # set ANTHROPIC_API_KEY
 npm run temporal:up               # Temporal on :7233, UI on http://localhost:8080
 npm run worker                    # leave running
@@ -82,6 +86,7 @@ Then either:
 
 ```bash
 npm run typecheck && npm test     # unit and integration tests; no Temporal server or API key needed
+npm run typecheck:types && npm run test:types   # the agent-types package
 ```
 
 ## Key rules

@@ -1,5 +1,5 @@
 name: Setup
-description: Install and cache node_modules
+description: Install and cache node_modules (with submodule support)
 
 runs:
   using: composite
@@ -27,3 +27,7 @@ runs:
       with:
         path: node_modules
         key: node-modules-${{ hashFiles('package-lock.json') }}
+
+    - name: Build @threadbase/agent-types
+      shell: bash
+      run: npm run build:types

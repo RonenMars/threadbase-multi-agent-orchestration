@@ -6,7 +6,7 @@ inputs:
     description: "Node.js version to set up"
     required: true
   command:
-    description: "npm script to run (typecheck, test, etc.)"
+    description: "npm script to run (typecheck, test, build:types, etc.)"
     required: true
 
 runs:
