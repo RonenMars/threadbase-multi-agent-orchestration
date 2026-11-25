@@ -47,7 +47,7 @@ function makeStubActivities(emitted: ProgressEvent[], opts: ScenarioOptions) {
 }
 
 async function runTurnWorkflow(emitted: ProgressEvent[], opts: ScenarioOptions) {
-  const { turnWorkflow } = await import('../../src/workflows/turn');
+  const { pipelineWorkflow: turnWorkflow } = await import('../../src/threadbase/pipeline');
   const taskQueue = `tq-${nanoid(6)}`;
 
   const worker = await Worker.create({

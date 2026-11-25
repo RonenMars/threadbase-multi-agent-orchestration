@@ -3,4 +3,4 @@
 // expects a single object exposing every callable activity by name.
 
 export { processTask, reviewTask, productSignOff } from './agents';
-export { sendProgressEvent } from './progress';
+export { sendProgressEvent } from '../threadbase/progress';

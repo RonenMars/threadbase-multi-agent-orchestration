@@ -33,8 +33,8 @@ function makeActivities(emitted: ProgressEvent[], opts: { failTurnIds?: Set<stri
 }
 
 async function startOrchestrator(emitted: ProgressEvent[], opts: { failTurnIds?: Set<string> } = {}) {
-  const { orchestratorWorkflow } = await import('../../src/workflows/orchestrator');
-  const { userInputSignal } = await import('../../src/workflows/signals');
+  const { orchestratorWorkflow } = await import('../../src/threadbase/orchestrator');
+  const { userInputSignal } = await import('../../src/threadbase/signals');
   const taskQueue = `tq-${nanoid(6)}`;
   const sessionId = `sess-${nanoid(6)}`;
 

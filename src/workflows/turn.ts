@@ -3,6 +3,10 @@
 // ONE-SHOT child workflow per user turn. Drives the worker → reviewer →
 // (rework loop, capped at 2) → sign-off pipeline.
 //
+// FROZEN: new turns run as `pipelineWorkflow` (src/threadbase/pipeline.ts).
+// This stays only so turns started before the switch replay and finish; do not
+// change its commands. Delete it once no such turn can still be running.
+//
 // Determinism rules:
 // - `eventId` is generated via workflow.uuid4() — replay-safe (spec §7.6).
 // - `timestamp` is taken via workflow.now() (Temporal-safe replacement for Date.now).
@@ -18,9 +22,9 @@ import {
 import type { ProgressEvent, AgentOutputPayload } from '@threadbase-sh/agent-types';
 
 import type * as agentActivities from '../activities/agents';
-import type * as progressActivities from '../activities/progress';
+import type * as progressActivities from '../threadbase/progress';
 import type { Draft, Review, Task, TurnInput } from '../shared/types';
-import { stageQuery } from './signals';
+import { stageQuery } from '../threadbase/signals';
 import { createSeq } from './eventSeq';
 
 const { processTask, reviewTask, productSignOff } = proxyActivities<typeof agentActivities>({

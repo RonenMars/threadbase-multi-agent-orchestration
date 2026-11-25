@@ -1,6 +1,6 @@
 // src/scripts/smoke-task.ts
 //
-// Single-turn smoke test against the new turnWorkflow directly.
+// Single-turn smoke test against pipelineWorkflow directly.
 // Useful for verifying the legacy pipeline path still works.
 //
 // Prereqs:

@@ -190,7 +190,7 @@ export async function createTestRig(opts: CreateTestRigOpts): Promise<TestRig> {
   // module also caches its own config. Both need invalidation before the
   // worker boots; we use dynamic imports + resetModules-like behavior via
   // the activity's exposed reset hook.
-  const progressActivities = await import("../../src/activities/progress");
+  const progressActivities = await import("../../src/threadbase/progress");
   progressActivities.__resetWebhookConfigForTests();
 
   // The shared config is read once at import time and the activity's
