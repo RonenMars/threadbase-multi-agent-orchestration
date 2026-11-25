@@ -21,14 +21,16 @@
     "test:types": "npm --workspace @threadbase-sh/agent-types test"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.40.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.332",
+    "@anthropic-ai/sdk": "^1.14.0",
     "@temporalio/activity": "^1.11.0",
     "@temporalio/client": "^1.11.0",
     "@temporalio/worker": "^1.11.0",
     "@temporalio/workflow": "^1.11.0",
     "dotenv": "^17.4.2",
     "nanoid": "^5.0.0",
-    "pino": "^10.0.0"
+    "pino": "^10.0.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@hono/node-server": "^1.19.0",

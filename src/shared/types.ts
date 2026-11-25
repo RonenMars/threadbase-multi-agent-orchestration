@@ -12,12 +12,21 @@ export interface Task {
 export interface Draft {
   taskId: string;
   content: string;
+  /** Shown to the user before the output, e.g. why a role ran without tools. */
+  note?: string;
 }
 
 export interface Review {
   taskId: string;
   approved: boolean;
   notes: string;
+  note?: string;
+}
+
+/** Which role an agent activity runs, and the directory an agent-sdk role works in. */
+export interface AgentCall {
+  role: string;
+  cwd?: string;
 }
 
 export interface Result {
@@ -39,4 +48,6 @@ export interface TurnInput {
   turnId: string;
   prompt: string;
   conversationHistory: ConversationTurn[];
+  /** The session's project directory, for agent-sdk roles. */
+  projectPath?: string;
 }
