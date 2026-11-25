@@ -15,7 +15,7 @@ import {
   isCancellation,
   log,
 } from '@temporalio/workflow';
-import type { ProgressEvent, UserInputSignal } from '@threadbase/agent-types';
+import type { ProgressEvent, UserInputSignal } from '@threadbase-sh/agent-types';
 
 import type * as progressActivities from '../activities/progress';
 import {

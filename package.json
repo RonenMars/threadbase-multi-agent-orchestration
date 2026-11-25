@@ -2,7 +2,6 @@
   "name": "threadbase-orchestration",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["packages/*"],
   "description": "Durable multi-agent task orchestration for Threadbase, built on Temporal.",
   "type": "commonjs",
   "scripts": {
@@ -15,10 +14,7 @@
     "smoke:session": "tsx src/scripts/smoke-session.ts",
     "smoke:receiver": "tsx src/scripts/mock-receiver.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "build:types": "npm --workspace @threadbase/agent-types run build",
-    "typecheck:types": "npm --workspace @threadbase/agent-types run typecheck",
-    "test:types": "npm --workspace @threadbase/agent-types test"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
@@ -26,6 +22,7 @@
     "@temporalio/client": "^1.11.0",
     "@temporalio/worker": "^1.11.0",
     "@temporalio/workflow": "^1.11.0",
+    "@threadbase-sh/agent-types": "^1.0.0",
     "dotenv": "^17.4.2",
     "nanoid": "^5.0.0",
     "pino": "^10.0.0"
@@ -33,7 +30,7 @@
   "devDependencies": {
     "@hono/node-server": "^1.19.0",
     "@temporalio/testing": "^1.11.0",
-    "@threadbase/streamer": "file:../tb-streamer",
+    "@threadbase-sh/streamer": "^1.151.0",
     "@types/node": "^22.0.0",
     "hono": "^4.12.0",
     "pino-pretty": "^11.0.0",

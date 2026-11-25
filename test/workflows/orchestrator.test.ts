@@ -4,7 +4,7 @@ import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker } from '@temporalio/worker';
 import { nanoid } from 'nanoid';
 import path from 'node:path';
-import type { ProgressEvent, UserInputSignal } from '@threadbase/agent-types';
+import type { ProgressEvent, UserInputSignal } from '@threadbase-sh/agent-types';
 
 let env: TestWorkflowEnvironment;
 let workflowsPath: string;

@@ -8,7 +8,7 @@
 // - Worker activity retry policy is for LLM/business failures, not webhooks.
 
 import crypto from 'node:crypto';
-import type { ProgressEvent } from '@threadbase/agent-types';
+import type { ProgressEvent } from '@threadbase-sh/agent-types';
 import { Context } from '@temporalio/activity';
 import type { Logger } from '@temporalio/common';
 import { config } from '../shared/config';

@@ -30,7 +30,7 @@ import {
   createProgressDedupeLRU,
   createProgressRoutes,
   type ProgressDedupeLRU,
-} from "@threadbase/streamer";
+} from "@threadbase-sh/streamer";
 import { Hono } from "hono";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

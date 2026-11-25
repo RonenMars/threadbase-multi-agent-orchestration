@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import crypto from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import type { ProgressEvent } from '@threadbase/agent-types';
+import type { ProgressEvent } from '@threadbase-sh/agent-types';
 
 let sendProgressEvent: typeof import('../../src/activities/progress').sendProgressEvent;
 let __resetWebhookConfigForTests: typeof import('../../src/activities/progress').__resetWebhookConfigForTests;

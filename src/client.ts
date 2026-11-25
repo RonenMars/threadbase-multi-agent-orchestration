@@ -15,7 +15,7 @@ import {
   stageQuery,
   userInputSignal,
 } from './workflows';
-import type { UserInputSignal } from '@threadbase/agent-types';
+import type { UserInputSignal } from '@threadbase-sh/agent-types';
 import type { TurnInput } from './shared/types';
 
 let client: Client | undefined;
