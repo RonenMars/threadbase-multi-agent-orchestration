@@ -1,26 +1,66 @@
 # Roadmap
 
-Things deferred out of the current milestone, kept here so we can find them again.
+What is planned next, in order, and what is deferred with the signal that would bring it back.
+Each milestone keeps the wire contract the streamer relies on: `orchestratorWorkflow`, `session-<id>`, the `agent-tasks` queue, the `userInput` signal, the `stage` query, and the existing event types and stages.
 
-## Architecture upgrades
+## Shipped
 
-- **LLM-as-orchestrator.** Today the orchestrator workflow is a hard-coded pipeline. Promote it to an LLM that picks sub-agent activities dynamically. Pre-requisite for non-trivial routing decisions across stages.
-- **`continueAsNew` in the long-lived orchestrator.** Required before any session can exceed roughly 25 turns in production — Temporal histories grow linearly, and the orchestrator workflow has to checkpoint via `continueAsNew` to stay healthy.
-- **Workflow state promotion (B.1 → B/C hybrid).** Milestone B keeps no `conversationHistory` in workflow state — history rides in each signal payload, composed by tb-streamer from its cache. Once LLM-as-orchestrator needs real cross-turn reasoning, promote to a compact summary + recent-turn buffer held by the workflow.
-- **`@threadbase/agent-types` package promotion.**
-  - ~~**Stage 1:** local `file:` dep with source at `tb-multi-agent/packages/agent-types/`, tb-streamer consuming via symlink.~~ Retired 2026-06-04 — the symlink approach broke CI and forced cross-repo discipline that wasn't viable.
-  - **Stage 2 (current, 2026-06-04):** standalone public repo at [RonenMars/threadbase-agent-types](https://github.com/RonenMars/threadbase-agent-types). Both consumers pin via git submodule (`packages/agent-types/` in tb-multi-agent, `vendor/agent-types/` in tb-streamer), currently at SHA `f8bfe43`. Both repos' CIs use `submodules: recursive`. Bumping the wire contract is a deliberate three-step act: push to agent-types repo → `git submodule update --remote` in the consuming repo → commit the SHA bump. Execution plan: [`docs/superpowers/plans/2026-06-03-stage-2-agent-types-extraction.md`](superpowers/plans/2026-06-03-stage-2-agent-types-extraction.md).
-  - **Stage 3 (planned):** published npm package. Real package boundary, versioned contract, no submodule SHA-bump dance. Bundle this with the tb-streamer distribution refactor ([`docs/superpowers/specs/2026-06-03-tb-streamer-distribution-refactor.md`](superpowers/specs/2026-06-03-tb-streamer-distribution-refactor.md)) — same npm-scope decisions, same publishing pipeline, same release cadence. Prerequisite: claim the `@threadbase` npm scope (currently unclaimed).
+- **Milestone B (2026-06-04):** the multi-agent worker, with the session orchestrator, a worker → reviewer → sign-off turn and signed progress webhooks ([#1](https://github.com/RonenMars/threadbase-multi-agent-orchestration/pull/1), notes in [`release-notes/2026-06-04-milestone-b.md`](release-notes/2026-06-04-milestone-b.md)).
+- **M0 (2026-11-25):** progress delivery to the streamer works again ([#13](https://github.com/RonenMars/threadbase-multi-agent-orchestration/pull/13)).
+  The streamer now comes from npm as `@threadbase-sh/streamer`, so the integration scenarios run in CI without a sibling checkout.
+  The streamer cancels `session-<id>` when a multi-agent session is stopped or killed.
+- **M1 (2026-11-25):** turns run on a product-agnostic engine in `src/engine/`, through the new `pipelineWorkflow` child ([#14](https://github.com/RonenMars/threadbase-multi-agent-orchestration/pull/14), notes in [`release-notes/2026-11-25-engine-extract.md`](release-notes/2026-11-25-engine-extract.md)).
 
-## Reliability upgrades
+## Next
 
-- **Rework escalation path.** Milestone B caps rework at 2 and emits the last draft with a `reviewerOverruled` flag. Future work: escalate hitting the cap to a human-in-loop review queue, or auto-retry on a stronger model. Decision deferred until we see how often the cap is actually hit in real traffic.
-- **Postgres-backed progress event dedupe (option D).** Milestone B uses an in-memory per-session dedupe map on tb-streamer (option B). Upgrade to a Postgres unique-index table when duplicate UI blocks during restarts stop being acceptable, when tb-streamer needs more than one replica per session, or when auditing live delivery becomes a requirement. Full design: [`docs/plans/postgres-dedupe.md`](plans/postgres-dedupe.md).
+### M2: `continueAsNew` for long sessions
 
-## Distribution
+- The orchestrator continues as new after a number of turns, or once its history length passes a threshold, carrying the pending queue and its counters.
+  Temporal histories grow with every turn, so a long session needs this to stay healthy.
+- Ids, signals and queries keep their names, so the streamer does not notice.
+- A 30-turn time-skipping test must not drop a queued input.
 
-- **tb-streamer npm publish.** Milestone B integration tests consume tb-streamer via a local `file:../tb-streamer` dep because GitHub-URL installs fail (submodule + native-build chain) and tb-streamer doesn't publish to npm. Path forward: extract `@threadbase/streamer-api` as a workspace package and publish it (Scope B in the spec) — agent surface only, no node-pty/SQLite/CLI deps. Removes the sibling-checkout requirement for integration tests and unlocks external integrators. Full scope analysis and recommended approach: [`docs/superpowers/specs/2026-06-03-tb-streamer-distribution-refactor.md`](superpowers/specs/2026-06-03-tb-streamer-distribution-refactor.md).
+### M3: runtime seam and roles
 
-## API hygiene
+- An `AgentRuntime` interface, with today's text agent as its first runtime.
+- A Claude Agent SDK runtime that works inside the session's project directory, with a tool allowlist, a per-agent budget and its cost reported back.
+- A secret guard inside SDK sessions: reads of `.env*`, `~/.ssh`, credential files and the streamer's config are refused, and secrets are masked in debug logs.
+- Roles as data in `roles.yaml` (model, runtime, tools, effort and prompt), keyed by any string; the worker and reviewer default to the text runtime.
+- An additive start argument, `orchestratorWorkflow(sessionId, opts?: { projectPath?: string })`, passed by the streamer.
 
-- **Structured error codes retrofit.** Plan 3.5 introduces structured `{error, code}` responses for multi-agent endpoints. Existing PTY-mode endpoints in tb-streamer's `server.ts` still return unstructured `{error: "human msg"}` only. Retrofit them when (a) the mobile app needs distinguishable error handling on PTY paths, (b) a second non-mobile consumer wants typed errors, or (c) the unstructured pattern has caused a real bug. Full design: [`docs/plans/structured-error-codes-retrofit.md`](plans/structured-error-codes-retrofit.md). Estimated effort: 1-2 days focused work.
+### M4: durable human gates on the phone
+
+- A `gate` phase waits for an answer with a timeout, takes its `onTimeout` option when none comes, and drops answers with a stale or unknown `gateId`.
+- An additive agent-types release adds `gate_open` and `gate_closed` events.
+- The streamer maps them onto its existing WS `permission` and `permission_cancelled` events and signals `gateAnswer` back, so the phone needs no change.
+- Sign-off becomes a real gate: Approve, Request changes (back to rework) or Stop.
+- Every turn still ends with `agent_output` at `done` or with `terminal_failure`, so the streamer's turn lock always releases.
+
+### M5: spend cap and rework escalation
+
+- A per-turn spend cap over the runtimes' reported cost; reaching it ends the turn with `terminal_failure` and a reason.
+- Reaching the rework cap opens a gate (accept anyway, retry on a stronger model, or stop) instead of sending the last draft with `reviewerOverruled`.
+
+### M6: CI hardening
+
+- A diff-driven skip gate with a paths file, replacing the `[skip-ci]` text tag.
+- gitleaks over the change's commits, and `npm audit --omit=dev`.
+- Actions pinned by SHA, `permissions: contents: read`, and concurrency groups.
+
+## Deferred
+
+- **LLM-as-orchestrator.** The pipeline is a fixed list of phases. An LLM that picks the next phase comes once the static pipeline is proven in real traffic.
+- **Workflow state promotion.** The workflow keeps no conversation history; it rides in each `userInput` payload, composed by the streamer. Once cross-turn reasoning needs it, hold a compact summary plus a recent-turn buffer in the workflow.
+- **Review memory (lessons and precedents).** Once gates produce decisions worth reusing.
+- **Batches.** If the phone gets a batch UI.
+- **Postgres-backed progress event dedupe.** The streamer dedupes progress events in memory per session. Move to a Postgres unique-index table when duplicate UI blocks during restarts stop being acceptable, when the streamer needs more than one replica per session, or when live delivery needs an audit trail. Design: [`plans/postgres-dedupe.md`](plans/postgres-dedupe.md).
+- **Structured error codes on the streamer's PTY endpoints.** Multi-agent endpoints return `{error, code}`; the older PTY endpoints return only `{error}`. Retrofit them when the mobile app needs to tell PTY errors apart, a second consumer wants typed errors, or the untyped shape causes a real bug. Design: [`plans/structured-error-codes-retrofit.md`](plans/structured-error-codes-retrofit.md).
+
+## Known gap
+
+The mobile app does not yet render `agent_output`, `terminal_failure` or stage events; answers reach the phone only through the conversation JSONL.
+
+## The wire types
+
+`@threadbase-sh/agent-types` lives in [threadbase-agent-types](https://github.com/RonenMars/threadbase-agent-types) and is published on npm.
+This repo checks it out as a git submodule at `packages/agent-types`, pinned to a release tag (`v1.0.0` today), and each agent-types release opens a PR here that bumps it (`.github/workflows/update-agent-types.yml`).
