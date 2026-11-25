@@ -80,13 +80,17 @@ export function __resetWebhookConfigForTests(): void {
   // version is whatever was current then. Reset is sufficient.
 }
 
-function sign(body: string, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(body).digest('hex');
+// Signing `${timestamp}.${body}` binds the timestamp to the body, so a captured
+// request cannot be replayed once the receiver's skew window has passed.
+function sign(timestamp: string, body: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
 }
 
 async function postOnce(cfg: WebhookConfig, ev: ProgressEvent): Promise<{ ok: boolean; status: number }> {
   const body = JSON.stringify(ev);
-  const signature = sign(body, cfg.secret);
+  // Fresh per attempt: every retry is re-signed with the current time.
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = sign(timestamp, body, cfg.secret);
   // Append sessionId to the URL per spec §5.1 — POST /internal/sessions/:sessionId/progress.
   const url = `${cfg.url.replace(/\/$/, '')}/${encodeURIComponent(ev.sessionId)}/progress`;
 
@@ -98,7 +102,7 @@ async function postOnce(cfg: WebhookConfig, ev: ProgressEvent): Promise<{ ok: bo
       headers: {
         'content-type': 'application/json',
         'x-progress-signature': signature,
-        'x-progress-timestamp': String(Math.floor(Date.now() / 1000)),
+        'x-timestamp': timestamp,
         'x-progress-event-id': ev.eventId,
       },
       body,
