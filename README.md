@@ -46,7 +46,7 @@ It is read on each turn, so an edit applies to the next one.
   Its activity times out after 30 minutes instead of 5, heartbeats every 20 seconds, and stops on its role's `maxBudgetUsd` or `maxTurns` without a retry.
 - **Without a project path**, an `agent-sdk` role runs as `text`, and the turn shows a note saying so.
 - **Secrets stay out of agent sessions.**
-  A hook refuses reads and writes of `.env*` (other than `.env.example`), key and credential files, `~/.ssh`, `~/.aws` and the other credential folders, and the streamer's config folder (`THREADBASE_CONFIG_DIR`, or `~/.threadbase`).
+  A hook refuses reads and writes of `.env*` (other than `.env.example`), key and credential files, `~/.ssh`, `~/.aws` and the other credential folders, the streamer's config folder (`THREADBASE_CONFIG_DIR`, or `~/.threadbase`), and `/proc` and `/sys`, which expose other processes' environments.
   It also refuses searches rooted at or above the home folder.
   Grep output has secret files' lines removed.
   The session gets only the environment variables it needs (`PATH`, `HOME`, locale, `ANTHROPIC_*`, `CLAUDE_CODE_*`), and secret values are masked in its logs.

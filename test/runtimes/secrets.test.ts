@@ -19,6 +19,7 @@ describe('guardToolUse', () => {
   it.each([
     ['.env'], ['.env.local'], ['sub/.env.production'], ['~/.ssh/config'], ['keys/config'], [`${home}/.aws/credentials`],
     ['server.pem'], ['tls.key'], ['credentials.json'], ['~/.threadbase/config.json'], ['~/.config/gh/hosts.yml'],
+    ['/proc/self/environ'], ['/proc/1234/cmdline'], ['/sys/kernel/x'],
   ])('refuses a read of %s', (file) => {
     expect(guard('Read', { file_path: file })).toBeDefined();
   });
@@ -54,11 +55,13 @@ describe('guardToolUse', () => {
   it.each([
     ['cat .env'], ['cat ~/.ssh/id_rsa'], ['printenv'], ['env'], ['ls && env'], ['cat /proc/self/environ'],
     ['export -p'], ['cat ~/.threadbase/config.json'], ['cp credentials /tmp'],
+    ['cat ~/.config/gh/hosts.yml'], ['cat ~/.docker/config.json'], ['cat ~/.claude/.credentials.json'],
+    ['cat server.pem'], ['cat id_ed25519'], ['cat /proc/1/cmdline'], ['cat app/.credentials'],
   ])('trips on the Bash command %s', (command) => {
     expect(guard('Bash', { command })).toBeDefined();
   });
 
-  it.each([['git status'], ['npm test'], ['cat .env.example'], ['ls src']])('lets the Bash command %s through', (command) => {
+  it.each([['git status'], ['npm test'], ['cat .env.example'], ['ls src'], ['node -e "console.log(1)"'], ['cat src/keys.ts']])('lets the Bash command %s through', (command) => {
     expect(guard('Bash', { command })).toBeUndefined();
   });
 
@@ -87,6 +90,11 @@ describe('redactGrep', () => {
       content: '.env:1:TOKEN=abc\nsrc/a.ts:3:TOKEN\nsrc/a.ts-4-ctx\nkeys/id_ed25519-2-x\nconfig/.env.local:x',
     }, repo, home, env);
     expect(out).toEqual({ mode: 'content', numFiles: 1, filenames: ['src/a.ts'], content: 'src/a.ts:3:TOKEN\nsrc/a.ts-4-ctx' });
+  });
+
+  it('drops a secret file line even when its folder name looks like a separator', () => {
+    const out = redactGrep({ content: 'src/a-1-b/.env:TOKEN=abc\nsrc/a.ts:1:x' }, repo, home, env) as { content: string };
+    expect(out.content).toBe('src/a.ts:1:x');
   });
 
   it('returns undefined when there is nothing to remove', () => {

@@ -40,11 +40,16 @@ const inside = (p: string, root: string) => {
 
 export function isSecretPath(p: string, cwd: string, home = os.homedir(), env = process.env): boolean {
   const abs = real(path.resolve(cwd, p.replace(/^~(?=$|\/)/, home)));
-  return SECRET_NAME.test(path.basename(abs)) || secretRoots(home, env).some((root) => inside(abs, real(root)));
+  // /proc and /sys expose other processes' environments, the worker's included.
+  return SECRET_NAME.test(path.basename(abs)) || ['/proc', '/sys', ...secretRoots(home, env)].some((root) => inside(abs, real(root)));
 }
 
 // ponytail: a tripwire over the command text, not a boundary; give a role Bash only if it needs it.
-const BASH_SECRET = /(^|[\s'"=/<>|;&(])(\.env(?!\.(example|sample|template)\b)\b|\.ssh\b|\.aws\b|\.netrc\b|\.npmrc\b|\.threadbase\b|\.git-credentials\b|credentials\b)|\bprintenv\b|\/environ\b|(^|[;&|]\s*)(env|set|export -p)\s*($|[;&|])/;
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const BASH_SECRET = new RegExp(
+  String.raw`(^|[\s'"=/<>|;&(.])(\.env(?!\.(example|sample|template)\b)\b|${[...HOME_SECRETS, '.threadbase'].map(esc).join('|')}\b|credentials\b|id_(rsa|ed25519|ecdsa|dsa)\b)` +
+    String.raw`|\.(pem|key)\b|\bprintenv\b|\/(proc|sys)\/|\/environ\b|(^|[;&|]\s*)(env|set|export -p)\s*($|[;&|])`,
+);
 
 /**
  * Why a tool call must be refused, or undefined to let it through.
@@ -84,10 +89,11 @@ export function redactGrep(output: unknown, cwd: string, home = os.homedir(), en
   if (!output || typeof output !== 'object') return undefined;
   const o = output as { filenames?: string[]; content?: string; numFiles?: number };
   const secret = (p: string) => isSecretPath(p, cwd, home, env);
-  // Content lines start with the file path: "path:line", "path:12:line" or "path-12-line".
-  const lineFile = (line: string) => /^(.+?)(?::|-\d+-)/.exec(line)?.[1] ?? '';
+  // Content lines start with the file path, then ":" or "-12-". A path can hold either,
+  // so every prefix ending at a separator is checked: a line is dropped if any is secret.
+  const fromSecret = (line: string) => [...line.matchAll(/:|-\d+-/g)].some((m) => secret(line.slice(0, m.index)));
   const filenames = o.filenames?.filter((f) => !secret(f));
-  const content = o.content?.split('\n').filter((l) => !secret(lineFile(l))).join('\n');
+  const content = o.content?.split('\n').filter((l) => !fromSecret(l)).join('\n');
   if (filenames?.length === o.filenames?.length && content === o.content) return undefined;
   return { ...o, filenames, content, numFiles: filenames?.length ?? o.numFiles };
 }
