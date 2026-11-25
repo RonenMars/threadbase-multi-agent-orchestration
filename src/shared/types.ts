@@ -27,7 +27,7 @@ export interface Result {
   reworkAttempts: number;
 }
 
-import type { ConversationTurn } from '@threadbase/agent-types';
+import type { ConversationTurn } from '@threadbase-sh/agent-types';
 
 /**
  * Per-turn child workflow input. The orchestrator passes this when starting a

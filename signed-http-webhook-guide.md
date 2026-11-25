@@ -24,8 +24,8 @@ Use an internal endpoint on `tb-streamer` such as:
 ```http
 POST /internal/sessions/:sessionId/progress
 Content-Type: application/json
-X-Progress-Signature: <hmac>
-X-Progress-Timestamp: 1717430000
+X-Progress-Signature: <hmac of "<X-Timestamp>.<raw body>">
+X-Timestamp: 1717430000
 X-Progress-Event-Id: evt_123
 ```
 
@@ -64,9 +64,9 @@ Implementation steps:
 
 1. Build the event envelope.
 2. Serialize the raw JSON body.
-3. Compute an HMAC over the raw body using a shared secret.
+3. Take the current unix time in seconds and compute an HMAC over `${timestamp}.${rawBody}` using a shared secret. Signing the timestamp with the body stops a captured request from being replayed after the skew window.
 4. Send the request to `tb-streamer` over HTTPS.
-5. Treat delivery as best-effort.
+5. Treat delivery as best-effort. A transport retry re-signs with a fresh timestamp instead of resending the old headers.
 6. Let Temporal retry the activity if the activity itself fails; the webhook handler must tolerate duplicates.
 
 Example TypeScript sketch:
@@ -74,20 +74,21 @@ Example TypeScript sketch:
 ```ts
 import crypto from 'crypto';
 
-function signPayload(rawBody: string, secret: string) {
-  return crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+function signPayload(timestamp: string, rawBody: string, secret: string) {
+  return crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
 }
 
 async function sendProgressEvent(url: string, secret: string, event: unknown) {
   const rawBody = JSON.stringify(event);
-  const signature = signPayload(rawBody, secret);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = signPayload(timestamp, rawBody, secret);
 
   await fetch(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-progress-signature': signature,
-      'x-progress-timestamp': String(Math.floor(Date.now() / 1000)),
+      'x-timestamp': timestamp,
       'x-progress-event-id': (event as any).eventId,
     },
     body: rawBody,
@@ -109,8 +110,8 @@ async function sendProgressEvent(url: string, secret: string, event: unknown) {
 Implementation steps:
 
 1. Read the raw request body before JSON parsing.
-2. Verify the HMAC signature using the shared secret.
-3. Verify the timestamp is within an acceptable skew window.
+2. Verify the HMAC signature over `${X-Timestamp}.${rawBody}` using the shared secret.
+3. Verify the timestamp is present and within an acceptable skew window.
 4. Check whether the `eventId` or `(sessionId, turnId, seq)` has already been processed.
 5. Store the event in the existing in-memory/session state.
 6. Forward the event to the connected WebSocket client.
@@ -124,8 +125,12 @@ import express from 'express';
 const app = express();
 app.use('/internal', express.raw({ type: 'application/json' }));
 
-function verifySignature(rawBody: Buffer, signature: string, secret: string) {
-  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+function verifySignature(rawBody: Buffer, timestamp: string, signature: string, secret: string) {
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${rawBody.toString('utf8')}`)
+    .digest('hex');
+  if (signature.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
 }
 
@@ -134,9 +139,11 @@ const seen = new Set<string>();
 app.post('/internal/sessions/:sessionId/progress', (req, res) => {
   const sessionId = req.params.sessionId;
   const signature = String(req.header('x-progress-signature') || '');
+  const timestamp = String(req.header('x-timestamp') || '');
   const rawBody = req.body as Buffer;
 
-  if (!verifySignature(rawBody, signature, process.env.PROGRESS_HMAC_SECRET!)) {
+  const fresh = /^\d+$/.test(timestamp) && Math.abs(Date.now() / 1000 - Number(timestamp)) <= 300;
+  if (!fresh || !verifySignature(rawBody, timestamp, signature, process.env.PROGRESS_HMAC_SECRET!)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
@@ -174,9 +181,9 @@ Use HTTPS for the worker-to-`tb-streamer` call. Keep the shared secret in enviro
 
 Recommended checks:
 
-- Verify the HMAC signature over the raw bytes.
+- Verify the HMAC signature over `${X-Timestamp}.${rawBody}`, never over the body alone.
 - Reject missing or malformed signatures.
-- Reject stale timestamps outside a short skew window.
+- Reject missing or stale timestamps outside a short skew window.
 - Keep the endpoint internal-only, even if it is also authenticated.
 - Avoid putting secrets in the URL.
 

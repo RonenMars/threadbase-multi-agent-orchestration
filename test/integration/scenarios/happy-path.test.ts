@@ -46,15 +46,15 @@ describe("integration: happy path", () => {
           conversationHistory: [],
         });
 
-        // Wait for the final `done` stage transition to traverse all the way
-        // to the WS sink. Polling is acceptable here because the rig is
+        // Wait for the final answer (the `done` agent_output, the turn's last
+        // event) to traverse all the way to the WS sink. Polling is acceptable here because the rig is
         // entirely in-process; production code would react to the WSMessage
         // arrival instead.
         const deadline = Date.now() + 15_000;
         while (Date.now() < deadline) {
           const done = rig.sink.captured.find(
             (m) =>
-              (m as { type?: string }).type === "session_update" &&
+              (m as { type?: string }).type === "agent_output" &&
               (m as { stage?: string }).stage === "done" &&
               (m as { sessionId?: string }).sessionId === sessionId,
           );

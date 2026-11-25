@@ -106,13 +106,9 @@ jobs:
         if: needs.gate.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Unit tests (tb-multi-agent)
+      - name: Tests (unit and integration)
         if: needs.gate.outputs.skip != 'true'
-        # Exclude integration tests — they require tb-streamer's built dist/
-        # at ../tb-streamer/dist/, which isn't available in this single-repo
-        # CI. Integration tests run locally before merge; see
-        # test/integration/README.md for the cross-repo setup.
-        run: npx vitest run --exclude 'test/integration/**'
+        run: npm test
 
       - name: Unit tests (@threadbase/agent-types)
         if: needs.gate.outputs.skip != 'true'

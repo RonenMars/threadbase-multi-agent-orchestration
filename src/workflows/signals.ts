@@ -5,7 +5,7 @@
 // re-declaration in two places would be a sneaky bug.
 
 import { defineQuery, defineSignal } from '@temporalio/workflow';
-import type { UserInputSignal } from '@threadbase/agent-types';
+import type { UserInputSignal } from '@threadbase-sh/agent-types';
 
 export const userInputSignal = defineSignal<[UserInputSignal]>('userInput');
 

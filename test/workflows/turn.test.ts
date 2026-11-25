@@ -4,7 +4,7 @@ import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker } from '@temporalio/worker';
 import { nanoid } from 'nanoid';
 import path from 'node:path';
-import type { ProgressEvent } from '@threadbase/agent-types';
+import type { ProgressEvent } from '@threadbase-sh/agent-types';
 
 import type { TurnInput } from '../../src/shared/types';
 import type { Draft, Review } from '../../src/shared/types';

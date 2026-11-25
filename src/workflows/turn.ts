@@ -15,7 +15,7 @@ import {
   workflowInfo,
   log,
 } from '@temporalio/workflow';
-import type { ProgressEvent, AgentOutputPayload } from '@threadbase/agent-types';
+import type { ProgressEvent, AgentOutputPayload } from '@threadbase-sh/agent-types';
 
 import type * as agentActivities from '../activities/agents';
 import type * as progressActivities from '../activities/progress';

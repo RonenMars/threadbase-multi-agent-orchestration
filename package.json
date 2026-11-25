@@ -16,9 +16,9 @@
     "smoke:receiver": "tsx src/scripts/mock-receiver.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build:types": "npm --workspace @threadbase/agent-types run build",
-    "typecheck:types": "npm --workspace @threadbase/agent-types run typecheck",
-    "test:types": "npm --workspace @threadbase/agent-types test"
+    "build:types": "npm --workspace @threadbase-sh/agent-types run build",
+    "typecheck:types": "npm --workspace @threadbase-sh/agent-types run typecheck",
+    "test:types": "npm --workspace @threadbase-sh/agent-types test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
@@ -33,7 +33,7 @@
   "devDependencies": {
     "@hono/node-server": "^1.19.0",
     "@temporalio/testing": "^1.11.0",
-    "@threadbase/streamer": "file:../tb-streamer",
+    "@threadbase-sh/streamer": "^1.151.0",
     "@types/node": "^22.0.0",
     "hono": "^4.12.0",
     "pino-pretty": "^11.0.0",
