@@ -1,7 +1,7 @@
-// src/workflows/orchestrator.ts
+// src/threadbase/orchestrator.ts
 //
 // LONG-LIVED workflow per session. Holds a serialized queue of user inputs and
-// spawns a one-shot child `turnWorkflow` for each. Catches child failures so
+// spawns a one-shot child `pipelineWorkflow` for each. Catches child failures so
 // the session survives a bad turn.
 
 import {
@@ -14,16 +14,18 @@ import {
   CancelledFailure,
   isCancellation,
   log,
+  patched,
 } from '@temporalio/workflow';
 import type { ProgressEvent, UserInputSignal } from '@threadbase-sh/agent-types';
 
-import type * as progressActivities from '../activities/progress';
+import type * as progressActivities from './progress';
 import {
   userInputSignal,
   stageQuery,
   queueDepthQuery,
 } from './signals';
-import { turnWorkflow } from './turn';
+import { turnWorkflow } from '../workflows/turn';
+import { pipelineWorkflow } from './pipeline';
 
 const { sendProgressEvent } = proxyActivities<typeof progressActivities>({
   startToCloseTimeout: '10 seconds',
@@ -90,7 +92,9 @@ export async function orchestratorWorkflow(sessionId: string): Promise<void> {
       });
 
       try {
-        await executeChild(turnWorkflow, {
+        // Sessions that started before the pipeline child keep replaying their
+        // recorded turns as `turnWorkflow`; every new turn runs the pipeline.
+        await executeChild(patched('pipeline-child') ? pipelineWorkflow : turnWorkflow, {
           workflowId: `turn-${sig.turnId}`,
           args: [{
             sessionId,

@@ -89,7 +89,7 @@ Inside `createTestRig`, the construction order is:
    - `sessionStore = { getManaged: (id) => ({ id, progressDedupeIds: dedupe }) }`
 3. **Start a Hono server** on a random port, mounting the real `createProgressRoutes(deps)` from `@threadbase-sh/streamer`.
 4. **Construct `TestWorkflowEnvironment.createTimeSkipping()`.** Configure a `Worker` with:
-   - The real `orchestratorWorkflow` and `turnWorkflow` modules.
+   - The real workflow bundle (`src/workflows/index.ts`): `orchestratorWorkflow` and `pipelineWorkflow`.
    - The real `sendProgressEvent` activity (so it makes real HTTP to our server).
    - The scenario's stubbed `processTask`/`reviewTask`/`productSignOff`.
 5. **Set env vars** (`PROGRESS_WEBHOOK_URL`, `PROGRESS_HMAC_SECRET`) so the activity reads the right values. The harness resets these in teardown.

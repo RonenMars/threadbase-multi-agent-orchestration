@@ -12,7 +12,7 @@ phone ──▶ tb-streamer ──start / signal──▶ Temporal ──▶ thi
 ## How a session runs
 
 - **tb-streamer starts the session.** With `MULTI_AGENT_FLOW=true`, it starts `orchestratorWorkflow(sessionId)` with id `session-<sessionId>` on the `agent-tasks` queue.
-- **Each message is a `userInput` signal.** The orchestrator queues signals and runs them one at a time as child `turnWorkflow`s.
+- **Each message is a `userInput` signal.** The orchestrator queues signals and runs them one at a time as child `pipelineWorkflow`s.
 - **A turn moves through stages:** `processing` (worker drafts), `review` (reviewer scores), `rework` (worker revises, up to 2 times), `sign-off`, `done`.
 - **Progress goes back by webhook.** Every stage change and agent answer is POSTed to `PROGRESS_WEBHOOK_URL/<sessionId>/progress`, signed as described below.
 - **Every turn ends** with an `agent_output` at `done` or a `terminal_failure`, which releases the streamer's turn lock.
@@ -37,11 +37,15 @@ The full scheme is in [`signed-http-webhook-guide.md`](signed-http-webhook-guide
 
 | Path | Role |
 |---|---|
-| `src/workflows/orchestrator.ts` | The session workflow: signal queue, one turn at a time |
-| `src/workflows/turn.ts` | One turn: worker → reviewer → rework → sign-off |
-| `src/workflows/signals.ts` | `userInput` signal, `stage` and `queueDepth` queries |
+| `src/engine/` | The product-agnostic phase loop: agent, review with rework, gate |
+| `src/threadbase/orchestrator.ts` | The session workflow: signal queue, one turn at a time |
+| `src/threadbase/pipeline.ts` | One turn: the worker → reviewer → rework → sign-off spec, run by the engine |
+| `src/threadbase/stages.ts` | Maps engine events onto the agent-types stages |
+| `src/threadbase/signals.ts` | `userInput` signal, `stage` and `queueDepth` queries |
+| `src/threadbase/progress.ts` | The signed progress webhook |
+| `src/workflows/index.ts` | The worker's workflow bundle entry |
+| `src/workflows/turn.ts` | The previous turn workflow, frozen so turns started before the switch can finish |
 | `src/activities/agents.ts` | The agents: every LLM call lives here |
-| `src/activities/progress.ts` | The signed progress webhook |
 | `src/client.ts` | Start, signal, query and end sessions (used by the smoke scripts) |
 | `src/worker.ts` | The worker process |
 | `src/scripts/` | Smoke scripts and a mock webhook receiver |
@@ -91,7 +95,7 @@ npm run typecheck:types && npm run test:types   # the agent-types package
 
 ## Key rules
 
-- **Workflow code is deterministic:** no network, clock or randomness in `src/workflows/`; side effects go in activities, which Temporal records and replays.
+- **Workflow code is deterministic:** no network, clock or randomness in `src/engine/`, `src/workflows/` or the `src/threadbase/` workflow files; side effects go in activities, which Temporal records and replays.
 - **Event ids come from `workflow.uuid4()`,** so a replayed workflow sends the same ids and the streamer drops the duplicates.
 - **Scale by running more workers** on the `agent-tasks` queue.
 

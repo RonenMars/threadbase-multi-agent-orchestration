@@ -3,7 +3,8 @@
 //
 // It connects to Temporal, polls the Task Queue, and runs:
 // - The long-lived `orchestratorWorkflow` (one per session, holds the signal queue).
-// - The one-shot `turnWorkflow` (one per user message, drives the agent pipeline).
+// - The one-shot `pipelineWorkflow` (one per user message, drives the agent pipeline),
+//   and the frozen `turnWorkflow` for turns started before it.
 // - All activities: `processTask`, `reviewTask`, `productSignOff`, `sendProgressEvent`.
 //
 // Run several replicas to scale; Temporal load-balances across the shared

@@ -5,8 +5,8 @@ import crypto from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { ProgressEvent } from '@threadbase-sh/agent-types';
 
-let sendProgressEvent: typeof import('../../src/activities/progress').sendProgressEvent;
-let __resetWebhookConfigForTests: typeof import('../../src/activities/progress').__resetWebhookConfigForTests;
+let sendProgressEvent: typeof import('../../src/threadbase/progress').sendProgressEvent;
+let __resetWebhookConfigForTests: typeof import('../../src/threadbase/progress').__resetWebhookConfigForTests;
 
 const SECRET = 'unit-secret';
 
@@ -57,7 +57,7 @@ describe('sendProgressEvent', () => {
     process.env.PROGRESS_WEBHOOK_BACKOFF = '2';
     process.env.PROGRESS_WEBHOOK_TIMEOUT_MS = '1000';
     vi.resetModules();
-    const mod = await import('../../src/activities/progress');
+    const mod = await import('../../src/threadbase/progress');
     sendProgressEvent = mod.sendProgressEvent;
     __resetWebhookConfigForTests = mod.__resetWebhookConfigForTests;
     __resetWebhookConfigForTests();
@@ -75,7 +75,7 @@ describe('sendProgressEvent', () => {
     }));
     process.env.PROGRESS_WEBHOOK_URL = `${baseUrl}/internal/sessions`;
     vi.resetModules();
-    const mod = await import('../../src/activities/progress');
+    const mod = await import('../../src/threadbase/progress');
     sendProgressEvent = mod.sendProgressEvent;
     __resetWebhookConfigForTests = mod.__resetWebhookConfigForTests;
     __resetWebhookConfigForTests();
@@ -104,7 +104,7 @@ describe('sendProgressEvent', () => {
     }));
     process.env.PROGRESS_WEBHOOK_URL = `${baseUrl}/internal/sessions`;
     vi.resetModules();
-    const mod = await import('../../src/activities/progress');
+    const mod = await import('../../src/threadbase/progress');
     sendProgressEvent = mod.sendProgressEvent;
     __resetWebhookConfigForTests = mod.__resetWebhookConfigForTests;
     __resetWebhookConfigForTests();
@@ -140,7 +140,7 @@ describe('sendProgressEvent', () => {
     }));
     process.env.PROGRESS_WEBHOOK_URL = `${baseUrl}/internal/sessions`;
     vi.resetModules();
-    const mod = await import('../../src/activities/progress');
+    const mod = await import('../../src/threadbase/progress');
     sendProgressEvent = mod.sendProgressEvent;
     __resetWebhookConfigForTests = mod.__resetWebhookConfigForTests;
     __resetWebhookConfigForTests();
@@ -157,7 +157,7 @@ describe('sendProgressEvent', () => {
     }));
     process.env.PROGRESS_WEBHOOK_URL = `${baseUrl}/internal/sessions`;
     vi.resetModules();
-    const mod = await import('../../src/activities/progress');
+    const mod = await import('../../src/threadbase/progress');
     sendProgressEvent = mod.sendProgressEvent;
     __resetWebhookConfigForTests = mod.__resetWebhookConfigForTests;
     __resetWebhookConfigForTests();
@@ -174,7 +174,7 @@ describe('sendProgressEvent', () => {
     await new Promise<void>((r) => tmp.close(() => r()));
     process.env.PROGRESS_WEBHOOK_URL = `http://127.0.0.1:${addr.port}/internal/sessions`;
     vi.resetModules();
-    const mod = await import('../../src/activities/progress');
+    const mod = await import('../../src/threadbase/progress');
     sendProgressEvent = mod.sendProgressEvent;
     __resetWebhookConfigForTests = mod.__resetWebhookConfigForTests;
     __resetWebhookConfigForTests();
@@ -190,7 +190,7 @@ describe('sendProgressEvent', () => {
     }));
     process.env.PROGRESS_WEBHOOK_URL = `${baseUrl}/internal/sessions`;
     vi.resetModules();
-    const mod = await import('../../src/activities/progress');
+    const mod = await import('../../src/threadbase/progress');
     sendProgressEvent = mod.sendProgressEvent;
     __resetWebhookConfigForTests = mod.__resetWebhookConfigForTests;
     __resetWebhookConfigForTests();

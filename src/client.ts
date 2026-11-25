@@ -11,7 +11,7 @@ import { Connection, Client } from '@temporalio/client';
 import { config } from './shared/config';
 import {
   orchestratorWorkflow,
-  turnWorkflow,
+  pipelineWorkflow,
   stageQuery,
   userInputSignal,
 } from './workflows';
@@ -70,7 +70,7 @@ export async function getSessionStage(sessionId: string): Promise<string> {
 
 export async function startTurn(turnInput: TurnInput): Promise<string> {
   const c = await getClient();
-  const handle = await c.workflow.start(turnWorkflow, {
+  const handle = await c.workflow.start(pipelineWorkflow, {
     taskQueue: config.taskQueue,
     workflowId: `turn-${turnInput.turnId}`,
     args: [turnInput],

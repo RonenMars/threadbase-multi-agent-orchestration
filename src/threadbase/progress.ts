@@ -1,4 +1,4 @@
-// src/activities/progress.ts
+// src/threadbase/progress.ts
 //
 // Fire-and-forget HMAC-signed webhook from worker activities to tb-streamer.
 //
