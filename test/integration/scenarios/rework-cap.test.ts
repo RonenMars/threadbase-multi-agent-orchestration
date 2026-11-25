@@ -52,7 +52,7 @@ describe("integration: rework cap + reviewerOverruled", () => {
         while (Date.now() < deadline) {
           const done = rig.sink.captured.find(
             (m) =>
-              (m as { type?: string }).type === "session_update" &&
+              (m as { type?: string }).type === "agent_output" &&
               (m as { stage?: string }).stage === "done" &&
               (m as { sessionId?: string }).sessionId === sessionId,
           );
