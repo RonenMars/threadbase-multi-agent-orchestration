@@ -15,6 +15,9 @@ import {
   isCancellation,
   log,
   patched,
+  workflowInfo,
+  allHandlersFinished,
+  continueAsNew,
 } from '@temporalio/workflow';
 import type { ProgressEvent, UserInputSignal } from '@threadbase-sh/agent-types';
 
@@ -36,12 +39,27 @@ function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+// A run continues as new after this many turns, or once its history passes
+// MAX_HISTORY_EVENTS. A turn costs about 13 events, so the event limit only
+// trips when a flood of inputs queues up behind one turn.
+const MAX_TURNS_PER_RUN = 20;
+const MAX_HISTORY_EVENTS = 500;
+
+/** State one run hands to the next when it continues as new. */
+export interface OrchestratorCarry {
+  /** Inputs still waiting. Each already got its `queued` event. */
+  queue: UserInputSignal[];
+}
+
 /**
  * @param sessionId  tb-streamer's session id (used as the routing key on the
  *                   webhook and as part of the workflowId by convention).
+ * @param carry      Set only by continue-as-new; the streamer starts with
+ *                   `[sessionId]` alone.
  */
-export async function orchestratorWorkflow(sessionId: string): Promise<void> {
-  const queue: UserInputSignal[] = [];
+export async function orchestratorWorkflow(sessionId: string, carry?: OrchestratorCarry): Promise<void> {
+  const queue: UserInputSignal[] = carry?.queue ?? [];
+  let turnsThisRun = 0;
   let currentTurnId: string | undefined;
   let stage: string = 'thinking';
 
@@ -81,8 +99,20 @@ export async function orchestratorWorkflow(sessionId: string): Promise<void> {
   // Main loop. Cancel the workflow to end the session.
   try {
     while (true) {
+      // Between turns only. Sessions that started before this patch replay
+      // their recorded turns without it.
+      if (
+        patched('continue-as-new') &&
+        (turnsThisRun >= MAX_TURNS_PER_RUN || workflowInfo().historyLength > MAX_HISTORY_EVENTS)
+      ) {
+        // Let a `userInput` handler finish its `queued` event first.
+        await condition(allHandlersFinished);
+        log.info('orchestrator continuing as new', { sessionId, turnsThisRun, queueDepth: queue.length });
+        await continueAsNew<typeof orchestratorWorkflow>(sessionId, { queue });
+      }
       await condition(() => queue.length > 0);
       const sig = queue.shift()!;
+      turnsThisRun++;
       currentTurnId = sig.turnId;
       stage = 'processing';
       log.info('dispatching child turn workflow', {
