@@ -3,7 +3,13 @@
 // Maps engine events onto the agent-types wire events the streamer reads.
 // Pure and deterministic: it runs inside workflow code.
 
-import type { AgentOutputPayload, ProgressEvent, Stage } from '@threadbase-sh/agent-types';
+import type {
+  AgentOutputPayload,
+  GateClosedPayload,
+  GateOpenPayload,
+  ProgressEvent,
+  Stage,
+} from '@threadbase-sh/agent-types';
 import type { Phase, PipelineEvent } from '../engine/pipeline';
 
 /** A progress event before the workflow stamps its identity, seq and time. */
@@ -24,6 +30,9 @@ function output(stage: Stage, payload: AgentOutputPayload, attempt?: number): Pr
   };
 }
 
+/** What a turn delivers when the human stops it at a gate. */
+export const STOPPED_CONTENT = 'Stopped at sign-off. The answer was not released.';
+
 export function toProgress(event: PipelineEvent): ProgressPartial[] {
   switch (event.kind) {
     case 'started': {
@@ -39,7 +48,28 @@ export function toProgress(event: PipelineEvent): ProgressPartial[] {
     case 'finished':
       return [
         { type: 'stage_transition', stage: 'done' },
-        output('done', { content: event.content, reviewerOverruled: event.overruled || undefined }),
+        output('done', {
+          content: event.stopped ? STOPPED_CONTENT : event.content,
+          reviewerOverruled: event.overruled || undefined,
+        }),
       ];
+    case 'gate_open': {
+      const gate = event.phase as Extract<Phase, { kind: 'gate' }>;
+      const payload: GateOpenPayload = {
+        gateId: event.gateId,
+        prompt: gate.prompt ?? gate.name,
+        ...(gate.detail ? { detail: gate.detail } : {}),
+        options: (gate.options ?? []).map((o) => o.label),
+      };
+      return [{ type: 'gate_open', stage: 'sign-off', payload: payload as unknown as Record<string, unknown> }];
+    }
+    case 'gate_closed': {
+      const payload: GateClosedPayload = {
+        gateId: event.gateId,
+        optionIndex: event.optionIndex,
+        timedOut: event.timedOut,
+      };
+      return [{ type: 'gate_closed', stage: 'sign-off', payload: payload as unknown as Record<string, unknown> }];
+    }
   }
 }

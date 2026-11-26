@@ -9,18 +9,19 @@
 // - `timestamp` uses the workflow's deterministic Date.now().
 // - `seq` is incremented from a per-turn counter — no global mutable state.
 
-import { proxyActivities, proxyLocalActivities, setHandler, uuid4, log } from '@temporalio/workflow';
+import { condition, patched, proxyActivities, proxyLocalActivities, setHandler, uuid4, log } from '@temporalio/workflow';
+import type { Duration } from '@temporalio/common';
 import type { ProgressEvent, Stage } from '@threadbase-sh/agent-types';
 
-import { runPipeline } from '../engine/run';
+import { GateInbox, runPipeline } from '../engine/run';
 import type { PipelineSpec } from '../engine/pipeline';
 import type * as agentActivities from '../activities/agents';
 import type { AgentCall, Draft, Review, Task, TurnInput } from '../shared/types';
 import type { TurnResult } from '../workflows/turn';
 import { createSeq } from '../workflows/eventSeq';
 import type * as progressActivities from './progress';
-import { stageQuery } from './signals';
-import { toProgress, type ProgressPartial } from './stages';
+import { gateAnswerSignal, stageQuery } from './signals';
+import { STOPPED_CONTENT, toProgress, type ProgressPartial } from './stages';
 
 // Timeout tiers: a text agent is one model call; an agent-sdk session works
 // in the repo for many turns. Both heartbeat, so a dead worker shows in 60 s.
@@ -54,8 +55,25 @@ export const threadbasePipeline: PipelineSpec = {
   phases: [
     { kind: 'agent', role: 'worker' },
     { kind: 'review', role: 'reviewer', maxRework: 2 },
-    { kind: 'gate', name: 'sign-off' },
+    {
+      kind: 'gate',
+      name: 'sign-off',
+      prompt: 'Release this answer?',
+      options: [
+        { label: 'Approve', action: 'continue' },
+        { label: 'Request changes', action: 'rework' },
+        { label: 'Stop', action: 'stop' },
+      ],
+      // An unanswered card approves, as the automatic sign-off always did.
+      timeout: '12 hours',
+      onTimeout: 0,
+    },
   ],
+};
+
+/** Turns that started before the human gate keep replaying the automatic sign-off. */
+const autoSignOffPipeline: PipelineSpec = {
+  phases: [...threadbasePipeline.phases.slice(0, 2), { kind: 'gate', name: 'sign-off' }],
 };
 
 function nowSeconds(): number {
@@ -66,6 +84,11 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
   const { sessionId, turnId, prompt, conversationHistory, projectPath } = input;
   let stage = 'processing';
   setHandler(stageQuery, () => stage);
+  const gates = new GateInbox();
+  setHandler(gateAnswerSignal, (answer) => {
+    if (!gates.answer(answer)) log.info('gate answer dropped', { sessionId, turnId, gateId: answer.gateId });
+  });
+  const spec = patched('human-sign-off') ? threadbasePipeline : autoSignOffPipeline;
 
   log.info('turn started', {
     sessionId,
@@ -134,7 +157,7 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
     await send({ type: 'agent_output', stage: stage as Stage, payload: { content: out.note } });
   }
 
-  const result = await runPipeline(threadbasePipeline, {
+  const result = await runPipeline(spec, {
     async agent(phase, rework) {
       const role = phase.kind === 'agent' ? phase.role : 'worker';
       draft = await tier(role).processTask(rework
@@ -155,10 +178,12 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
     async gate() {
       await productSignOff(draft!, review!);
     },
+    newId: () => uuid4(),
+    wait: (ready, timeout) => condition(ready, timeout as Duration),
     async emit(event) {
       for (const partial of toProgress(event)) await send(partial);
     },
-  });
+  }, gates);
 
   log.info('turn completed', {
     sessionId,
@@ -170,7 +195,7 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
 
   return {
     taskId: turnId,
-    content: result.content,
+    content: result.stopped ? STOPPED_CONTENT : result.content,
     review: review!,
     reworkAttempts: result.reworkAttempts,
     reviewerOverruled: result.overruled,

@@ -12,6 +12,7 @@ import { defaultPayloadConverter } from '@temporalio/common';
 import { temporal } from '@temporalio/proto';
 import { nanoid } from 'nanoid';
 import type { ProgressEvent, UserInputSignal } from '@threadbase-sh/agent-types';
+import { approvingGates } from '../threadbase/approve-gates';
 
 const workflowsPath = path.resolve(__dirname, '../../src/workflows/index.ts');
 const { EventType } = temporal.api.enums.v1;
@@ -41,10 +42,10 @@ async function startSession(emitted: ProgressEvent[], opts: { slowQueuedTurnIds?
       processTask: async (task: { id: string }) => ({ taskId: task.id, content: 'draft' }),
       reviewTask: async (draft: { taskId: string }) => ({ taskId: draft.taskId, approved: true, notes: '' }),
       productSignOff: async () => true,
-      sendProgressEvent: async (ev: ProgressEvent) => {
+      sendProgressEvent: approvingGates(env.client, async (ev: ProgressEvent) => {
         if (ev.stage === 'queued' && opts.slowQueuedTurnIds?.has(ev.turnId)) await sleep(3000);
         emitted.push(ev);
-      },
+      }),
     },
   });
   // The streamer's start shape: workflow type by name, args [sessionId].

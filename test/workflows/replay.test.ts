@@ -15,6 +15,7 @@ import { Worker } from '@temporalio/worker';
 import { temporal } from '@temporalio/proto';
 import { nanoid } from 'nanoid';
 import type { ProgressEvent } from '@threadbase-sh/agent-types';
+import { approvingGates } from '../threadbase/approve-gates';
 
 const workflowsPath = path.resolve(__dirname, '../../src/workflows/index.ts');
 
@@ -29,6 +30,14 @@ describe('replay of histories recorded before the pipeline child', () => {
       { workflowsPath },
       loadHistory('orchestrator-history.json'),
       'session-sess-record',
+    );
+  });
+
+  it('replays a pipelineWorkflow turn recorded before the human sign-off gate', async () => {
+    await Worker.runReplayHistory(
+      { workflowsPath },
+      loadHistory('pipeline-auto-sign-off-history.json'),
+      'turn-turn-auto',
     );
   });
 
@@ -65,7 +74,7 @@ describe('a session started on this code', () => {
         processTask: async (task: { id: string }) => ({ taskId: task.id, content: 'draft' }),
         reviewTask: async (draft: { taskId: string }) => ({ taskId: draft.taskId, approved: true, notes: '' }),
         productSignOff: async () => true,
-        sendProgressEvent: async (ev: ProgressEvent) => { emitted.push(ev); },
+        sendProgressEvent: approvingGates(env.client, async (ev: ProgressEvent) => { emitted.push(ev); }),
       },
     });
     const handle = await env.client.workflow.start('orchestratorWorkflow', {

@@ -2,7 +2,9 @@
 //
 // While the frozen `turnWorkflow` still exists, `pipelineWorkflow` must behave
 // exactly like it: the same progress events in the same order, the same
-// activity calls with the same arguments, and the same result.
+// activity calls with the same arguments, and the same result. The one
+// deliberate difference is sign-off: the pipeline asks a human (answered
+// Approve here) where the turn called `productSignOff`, so both are left out.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker } from '@temporalio/worker';
@@ -11,6 +13,7 @@ import path from 'node:path';
 import type { ConversationTurn, ProgressEvent } from '@threadbase-sh/agent-types';
 
 import type { Draft, Review, Task } from '../../src/shared/types';
+import { approvingGates } from './approve-gates';
 
 let env: TestWorkflowEnvironment;
 const workflowsPath = path.resolve(__dirname, '../../src/workflows/index.ts');
@@ -51,11 +54,11 @@ async function run(workflowType: 'turnWorkflow' | 'pipelineWorkflow', approvesAf
         calls.push(['productSignOff', draft, review]);
         return review.approved;
       },
-      sendProgressEvent: async ({ eventId, timestamp, ...ev }: ProgressEvent) => {
+      sendProgressEvent: approvingGates(env.client, async ({ eventId, timestamp, ...ev }: ProgressEvent) => {
         expect(eventId).toMatch(/^[0-9a-f-]{36}$/);
         expect(typeof timestamp).toBe('number');
         events.push(ev);
-      },
+      }),
     },
   });
   return worker.runUntil(async () => {
@@ -70,6 +73,14 @@ async function run(workflowType: 'turnWorkflow' | 'pipelineWorkflow', approvesAf
   });
 }
 
+const isGate = (e: unknown) => String((e as { type: string }).type).startsWith('gate_');
+const withoutSignOff = (r: Awaited<ReturnType<typeof run>>) => ({
+  ...r,
+  calls: r.calls.filter((c) => (c as unknown[])[0] !== 'productSignOff'),
+  // The gate events take two seq numbers; order is still compared.
+  events: r.events.filter((e) => !isGate(e)).map((e) => ({ ...(e as object), seq: undefined })),
+});
+
 describe('pipelineWorkflow matches turnWorkflow', () => {
   const history: ConversationTurn[] = [
     { role: 'user', content: 'earlier question' },
@@ -82,7 +93,8 @@ describe('pipelineWorkflow matches turnWorkflow', () => {
         const before = await run('turnWorkflow', approvesAfter, h);
         const after = await run('pipelineWorkflow', approvesAfter, h);
         expect(before.stage).toBe('done');
-        expect(after).toEqual(before);
+        expect(after.events.filter(isGate).map((e) => e.type)).toEqual(['gate_open', 'gate_closed']);
+        expect(withoutSignOff(after)).toEqual(withoutSignOff(before));
       });
     }
   }

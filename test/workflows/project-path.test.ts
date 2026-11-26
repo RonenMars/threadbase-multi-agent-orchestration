@@ -12,6 +12,7 @@ import { temporal } from '@temporalio/proto';
 import { nanoid } from 'nanoid';
 import type { ProgressEvent, UserInputSignal } from '@threadbase-sh/agent-types';
 import type { AgentCall } from '../../src/shared/types';
+import { approvingGates } from '../threadbase/approve-gates';
 
 const workflowsPath = path.resolve(__dirname, '../../src/workflows/index.ts');
 const { EventType } = temporal.api.enums.v1;
@@ -46,7 +47,7 @@ async function startSession(opts: { projectPath?: string; note?: string; rejectF
         return { taskId: draft.taskId, approved, notes: approved ? '' : 'again' };
       },
       productSignOff: async () => true,
-      sendProgressEvent: async (ev: ProgressEvent) => { emitted.push(ev); },
+      sendProgressEvent: approvingGates(env.client, async (ev: ProgressEvent) => { emitted.push(ev); }),
     },
   });
   const handle = await env.client.workflow.start('orchestratorWorkflow', {
@@ -86,7 +87,7 @@ describe('orchestratorWorkflow with a project path', () => {
       { activity: 'reviewTask', call: { role: 'reviewer', cwd: '/repo' } },
     ]);
     expect(s.lookups()).toBe(1);
-    expect(await activityTimeouts('t1')).toMatchObject({ processTask: 1800, reviewTask: 300, productSignOff: 300 });
+    expect(await activityTimeouts('t1')).toMatchObject({ processTask: 1800, reviewTask: 300 });
     const child = await env.client.workflow.getHandle('turn-t1').fetchHistory();
     await Worker.runReplayHistory({ workflowsPath }, child, 'turn-t1');
   });
