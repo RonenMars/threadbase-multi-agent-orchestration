@@ -7,106 +7,127 @@
 // Temporal retries activities per the policy set in the workflow, so a flaky
 // Claude call recovers automatically.
 //
+// Each agent activity runs a role from roles.yaml on that role's runtime. The
+// workflow picks the activity's timeout tier; the activity picks the runtime.
+//
 // Logging: use Context.current().log — it's the activity-context logger that
 // Temporal pre-populates with workflowType / activityType / attempt. The
 // Runtime's pino adapter routes it through our shared logger.
 
-import Anthropic from '@anthropic-ai/sdk';
 import { Context } from '@temporalio/activity';
-import { config } from '../shared/config';
-import type { Task, Draft, Review } from '../shared/types';
+import { getRole, loadRoles, type RuntimeName } from '../roles';
+import { runtimes, type AgentInput, type AgentResult } from '../runtimes';
+import { withHeartbeat } from '../runtimes/heartbeat';
+import { mask } from '../runtimes/secrets';
+import type { Task, Draft, Review, AgentCall } from '../shared/types';
 
-const claude = new Anthropic(); // reads ANTHROPIC_API_KEY from env
-
-function textOf(msg: Anthropic.Message): string {
-  return msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+/** Each role's runtime, so the workflow can pick the activity timeout for it. */
+export async function roleRuntimes(): Promise<Record<string, RuntimeName>> {
+  return Object.fromEntries(Object.values(loadRoles()).map((r) => [r.name, r.runtime]));
 }
 
-// --- Worker agent: takes a task, produces a draft ---------------------------
-export async function processTask(task: Task): Promise<Draft> {
+async function runRole(call: AgentCall, input: AgentInput): Promise<{ result: AgentResult; note?: string }> {
   const ctx = Context.current();
-  ctx.heartbeat('processing');
+  const role = getRole(call.role);
+  const sdk = role.runtime === 'agent-sdk' && !!call.cwd;
+  const note = role.runtime === 'agent-sdk' && !call.cwd
+    ? `The ${role.name} has no project directory for this session, so it ran without tools.`
+    : undefined;
+  const key = sdk ? `${ctx.info.workflowExecution?.workflowId}:${call.cwd}` : undefined;
+  const result = await withHeartbeat(key, (signal, beat) =>
+    runtimes[sdk ? 'agent-sdk' : 'text'].run(role, input, {
+      cwd: sdk ? call.cwd : undefined,
+      signal,
+      onMessage: beat,
+      log: (line) => ctx.log.debug('agent session stderr', { role: role.name, line }),
+    }));
+  return { result, note };
+}
+
+const errText = (err: unknown) => mask(err instanceof Error ? err.message : String(err));
+
+// --- Worker agent: takes a task, produces a draft ---------------------------
+export async function processTask(task: Task, call: AgentCall = { role: 'worker' }): Promise<Draft> {
+  const ctx = Context.current();
   const startedAt = Date.now();
   ctx.log.info('processTask start', {
     taskId: task.id,
     sessionId: task.sessionId,
-    model: config.model,
+    role: call.role,
+    cwd: call.cwd,
     promptLength: task.prompt.length,
   });
 
   try {
-    const msg = await claude.messages.create({
-      model: config.model,
-      max_tokens: 4096,
-      messages: [
-        { role: 'user', content: `${task.context ?? ''}\n\n${task.prompt}`.trim() },
-      ],
+    const { result, note } = await runRole(call, {
+      prompt: `${task.context ?? ''}\n\n${task.prompt}`.trim(),
+      maxTokens: 4096,
     });
-    const content = textOf(msg);
-
     ctx.log.info('processTask done', {
       taskId: task.id,
       sessionId: task.sessionId,
       durationMs: Date.now() - startedAt,
-      inputTokens: msg.usage?.input_tokens,
-      outputTokens: msg.usage?.output_tokens,
-      stopReason: msg.stop_reason,
-      contentLength: content.length,
+      ...result.stats,
+      contentLength: result.content.length,
     });
-
-    return { taskId: task.id, content };
+    return { taskId: task.id, content: result.content, ...(note ? { note } : {}) };
   } catch (err) {
     ctx.log.error('processTask failed', {
       taskId: task.id,
       sessionId: task.sessionId,
       durationMs: Date.now() - startedAt,
-      err: err instanceof Error ? err.message : String(err),
+      err: errText(err),
     });
     throw err;
   }
 }
 
+const VERDICT_SCHEMA = {
+  type: 'object',
+  properties: { approved: { type: 'boolean' }, notes: { type: 'string' } },
+  required: ['approved', 'notes'],
+  additionalProperties: false,
+};
+
 // --- Reviewer agent: inspects a draft, returns a verdict --------------------
-export async function reviewTask(draft: Draft): Promise<Review> {
+export async function reviewTask(draft: Draft, call: AgentCall = { role: 'reviewer' }): Promise<Review> {
   const ctx = Context.current();
   const startedAt = Date.now();
   ctx.log.info('reviewTask start', {
     taskId: draft.taskId,
-    model: config.model,
+    role: call.role,
+    cwd: call.cwd,
     draftLength: draft.content.length,
   });
 
   try {
-    const msg = await claude.messages.create({
-      model: config.model,
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content:
-            'Review the following work for correctness and quality. ' +
-            'Respond ONLY with JSON: {"approved": boolean, "notes": string}. ' +
-            'No prose, no markdown fences.\n\n' +
-            draft.content,
-        },
-      ],
+    const { result, note } = await runRole(call, {
+      prompt:
+        'Review the following work for correctness and quality. ' +
+        'Respond ONLY with JSON: {"approved": boolean, "notes": string}. ' +
+        'No prose, no markdown fences.\n\n' +
+        draft.content,
+      maxTokens: 1024,
+      schema: VERDICT_SCHEMA,
     });
+    const baseMeta = { taskId: draft.taskId, durationMs: Date.now() - startedAt, ...result.stats };
+    const withNote = (r: Review): Review => (note ? { ...r, note } : r);
 
-    const raw = textOf(msg).replace(/```json|```/g, '').trim();
-    const baseMeta = {
-      taskId: draft.taskId,
-      durationMs: Date.now() - startedAt,
-      inputTokens: msg.usage?.input_tokens,
-      outputTokens: msg.usage?.output_tokens,
-    };
+    if (result.structured) {
+      const parsed = result.structured as { approved: boolean; notes?: string };
+      const review = withNote({ taskId: draft.taskId, approved: !!parsed.approved, notes: parsed.notes ?? '' });
+      ctx.log.info('reviewTask done', { ...baseMeta, approved: review.approved, notesLength: review.notes.length });
+      return review;
+    }
 
+    const raw = result.content.replace(/```json|```/g, '').trim();
     try {
       const parsed = JSON.parse(raw) as { approved: boolean; notes: string };
-      const review: Review = {
+      const review = withNote({
         taskId: draft.taskId,
         approved: !!parsed.approved,
         notes: parsed.notes ?? '',
-      };
+      });
       ctx.log.info('reviewTask done', {
         ...baseMeta,
         approved: review.approved,
@@ -119,13 +140,13 @@ export async function reviewTask(draft: Draft): Promise<Review> {
         ...baseMeta,
         rawLength: raw.length,
       });
-      return { taskId: draft.taskId, approved: false, notes: `Unparseable review: ${raw}` };
+      return withNote({ taskId: draft.taskId, approved: false, notes: `Unparseable review: ${raw}` });
     }
   } catch (err) {
     ctx.log.error('reviewTask failed', {
       taskId: draft.taskId,
       durationMs: Date.now() - startedAt,
-      err: err instanceof Error ? err.message : String(err),
+      err: errText(err),
     });
     throw err;
   }

@@ -11,7 +11,8 @@ phone ──▶ tb-streamer ──start / signal──▶ Temporal ──▶ thi
 
 ## How a session runs
 
-- **tb-streamer starts the session.** With `MULTI_AGENT_FLOW=true`, it starts `orchestratorWorkflow(sessionId)` with id `session-<sessionId>` on the `agent-tasks` queue.
+- **tb-streamer starts the session.** With `MULTI_AGENT_FLOW=true`, it starts `orchestratorWorkflow(sessionId, { projectPath })` with id `session-<sessionId>` on the `agent-tasks` queue.
+  The second argument is optional; a streamer that sends `[sessionId]` alone gets text agents only.
 - **Each message is a `userInput` signal.** The orchestrator queues signals and runs them one at a time as child `pipelineWorkflow`s.
 - **A turn moves through stages:** `processing` (worker drafts), `review` (reviewer scores), `rework` (worker revises, up to 2 times), `sign-off`, `done`.
 - **Progress goes back by webhook.** Every stage change and agent answer is POSTed to `PROGRESS_WEBHOOK_URL/<sessionId>/progress`, signed as described below.
@@ -33,6 +34,24 @@ A retry is signed again with a fresh timestamp.
 A 4xx response is final; 5xx and network errors are retried with backoff.
 The full scheme is in [`signed-http-webhook-guide.md`](signed-http-webhook-guide.md).
 
+## Roles
+
+`roles.yaml` defines each role a pipeline names (`worker`, `reviewer`): its runtime, model, prompt file and, for agent sessions, tools and limits.
+The file's header lists every field.
+It is read on each turn, so an edit applies to the next one.
+
+- **`text`** (the default for both roles) makes one model call with no tools.
+- **`agent-sdk`** runs a Claude Agent SDK session in the session's project directory.
+  It loads no settings, hooks or MCP config from disk, gets only the tools its role lists (read-only `Read`, `Grep`, `Glob` by default), refuses anything else, and may start subagents one level deep.
+  Its activity times out after 30 minutes instead of 5, heartbeats every 20 seconds, and stops on its role's `maxBudgetUsd` or `maxTurns` without a retry.
+- **Without a project path**, an `agent-sdk` role runs as `text`, and the turn shows a note saying so.
+- **Secrets stay out of agent sessions.**
+  A hook refuses reads and writes of `.env*` (other than `.env.example`), key and credential files, `~/.ssh`, `~/.aws` and the other credential folders, the streamer's config folder (`THREADBASE_CONFIG_DIR`, or `~/.threadbase`), and `/proc` and `/sys`, which expose other processes' environments.
+  It also refuses searches rooted at or above the home folder.
+  Grep output has secret files' lines removed.
+  The session gets only the environment variables it needs (`PATH`, `HOME`, locale, `ANTHROPIC_*`, `CLAUDE_CODE_*`), and secret values are masked in its logs.
+  The `Bash` check matches the command text, so it is a tripwire rather than a boundary: give a role `Bash` only if it needs it.
+
 ## Layout
 
 | Path | Role |
@@ -45,7 +64,9 @@ The full scheme is in [`signed-http-webhook-guide.md`](signed-http-webhook-guide
 | `src/threadbase/progress.ts` | The signed progress webhook |
 | `src/workflows/index.ts` | The worker's workflow bundle entry |
 | `src/workflows/turn.ts` | The previous turn workflow, frozen so turns started before the switch can finish |
-| `src/activities/agents.ts` | The agents: every LLM call lives here |
+| `src/activities/agents.ts` | The agent activities: run each role on its runtime |
+| `roles.yaml`, `src/roles.ts` | The roles, and their loader |
+| `src/runtimes/` | The runtime seam: `text`, `agent-sdk`, the heartbeat wrapper and the secret guard |
 | `src/client.ts` | Start, signal, query and end sessions (used by the smoke scripts) |
 | `src/worker.ts` | The worker process |
 | `src/scripts/` | Smoke scripts and a mock webhook receiver |
@@ -78,7 +99,8 @@ Then either:
 | `TEMPORAL_NAMESPACE` | `default` |
 | `TEMPORAL_TASK_QUEUE` | `agent-tasks` |
 | `ANTHROPIC_API_KEY` | required |
-| `AGENT_MODEL` | `claude-opus-4-7` |
+| `AGENT_MODEL` | `claude-opus-4-7`; a role's `model` wins |
+| `ROLES_FILE` | `roles.yaml` at the repo root |
 | `PROGRESS_WEBHOOK_URL` | `http://localhost:3456/internal/sessions` |
 | `PROGRESS_HMAC_SECRET` | `dev-secret-change-me`; must match the streamer's |
 | `PROGRESS_WEBHOOK_ATTEMPTS` | `3` |
@@ -102,7 +124,8 @@ npm run typecheck:types && npm run test:types   # the agent-types package
 ## Known limits
 
 - Sign-off always approves; there is no human approval step yet.
-- Agents answer as text only: no tools and no access to the session's repo.
+- Both shipped roles run as `text`; switching one to `agent-sdk` is a `roles.yaml` edit.
+- The text runtime reports no cost yet.
 - The orchestrator never continues as new, so a very long session grows its history without bound.
 - tb-streamer does not end the session workflow when a session is killed.
   To end every running session workflow (this also ends live sessions):

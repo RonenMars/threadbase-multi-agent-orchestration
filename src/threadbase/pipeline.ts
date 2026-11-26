@@ -9,20 +9,22 @@
 // - `timestamp` uses the workflow's deterministic Date.now().
 // - `seq` is incremented from a per-turn counter — no global mutable state.
 
-import { proxyActivities, setHandler, uuid4, log } from '@temporalio/workflow';
-import type { ProgressEvent } from '@threadbase-sh/agent-types';
+import { proxyActivities, proxyLocalActivities, setHandler, uuid4, log } from '@temporalio/workflow';
+import type { ProgressEvent, Stage } from '@threadbase-sh/agent-types';
 
 import { runPipeline } from '../engine/run';
 import type { PipelineSpec } from '../engine/pipeline';
 import type * as agentActivities from '../activities/agents';
-import type { Draft, Review, Task, TurnInput } from '../shared/types';
+import type { AgentCall, Draft, Review, Task, TurnInput } from '../shared/types';
 import type { TurnResult } from '../workflows/turn';
 import { createSeq } from '../workflows/eventSeq';
 import type * as progressActivities from './progress';
 import { stageQuery } from './signals';
 import { toProgress, type ProgressPartial } from './stages';
 
-const { processTask, reviewTask, productSignOff } = proxyActivities<typeof agentActivities>({
+// Timeout tiers: a text agent is one model call; an agent-sdk session works
+// in the repo for many turns. Both heartbeat, so a dead worker shows in 60 s.
+const text = proxyActivities<typeof agentActivities>({
   startToCloseTimeout: '5 minutes',
   heartbeatTimeout: '60 seconds',
   retry: {
@@ -30,6 +32,17 @@ const { processTask, reviewTask, productSignOff } = proxyActivities<typeof agent
     initialInterval: '2 seconds',
     backoffCoefficient: 2,
   },
+});
+const { productSignOff } = text;
+
+const sdk = proxyActivities<typeof agentActivities>({
+  startToCloseTimeout: '30 minutes',
+  heartbeatTimeout: '60 seconds',
+  retry: { maximumAttempts: 2, initialInterval: '10 seconds' },
+});
+
+const { roleRuntimes } = proxyLocalActivities<typeof agentActivities>({
+  startToCloseTimeout: '10 seconds',
 });
 
 const { sendProgressEvent } = proxyActivities<typeof progressActivities>({
@@ -50,7 +63,7 @@ function nowSeconds(): number {
 }
 
 export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
-  const { sessionId, turnId, prompt, conversationHistory } = input;
+  const { sessionId, turnId, prompt, conversationHistory, projectPath } = input;
   let stage = 'processing';
   setHandler(stageQuery, () => stage);
 
@@ -109,18 +122,34 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
   let draft: Draft | undefined;
   let review: Review | undefined;
 
+  // Without a project path every role runs as text, so the turn records the
+  // same commands it always did.
+  const runtimeOf = projectPath ? await roleRuntimes() : {};
+  const call = (role: string): AgentCall => ({ role, ...(projectPath ? { cwd: projectPath } : {}) });
+  const tier = (role: string) => (runtimeOf[role] === 'agent-sdk' ? sdk : text);
+  const noted = new Set<string>();
+  async function note(role: string, out: { note?: string }): Promise<void> {
+    if (!out.note || noted.has(role)) return;
+    noted.add(role);
+    await send({ type: 'agent_output', stage: stage as Stage, payload: { content: out.note } });
+  }
+
   const result = await runPipeline(threadbasePipeline, {
-    async agent(_phase, rework) {
-      draft = await processTask(rework
+    async agent(phase, rework) {
+      const role = phase.kind === 'agent' ? phase.role : 'worker';
+      draft = await tier(role).processTask(rework
         ? {
           ...baseTask,
           context: `${baseTask.context ?? ''}\n\nReviewer notes to address: ${rework.notes}`.trim(),
         }
-        : baseTask);
+        : baseTask, call(role));
+      await note(role, draft);
       return draft.content;
     },
-    async review() {
-      review = await reviewTask(draft!);
+    async review(phase) {
+      const role = phase.kind === 'review' ? phase.role : 'reviewer';
+      review = await tier(role).reviewTask(draft!, call(role));
+      await note(role, review);
       return review;
     },
     async gate() {

@@ -1,0 +1,25 @@
+# Agent roles, keyed by the role names a pipeline's phases use.
+# Point ROLES_FILE at another file to swap the whole set.
+#
+#   runtime:        text (one model call, the default) or agent-sdk (a Claude
+#                   Agent SDK session in the session's project directory; with
+#                   no project path the role runs as text and says so)
+#   model:          defaults to AGENT_MODEL
+#   prompt:         a file, relative to this one, used as the system prompt
+#                   (text) or appended to the Claude Code preset (agent-sdk)
+#
+# agent-sdk only:
+#   tools:          built-in tools the session may use, all auto-approved;
+#                   defaults to the read-only Read, Grep and Glob
+#   allow:          extra permission rules, e.g. "Bash(git diff:*)"
+#   permissionMode: defaults to dontAsk, which refuses anything not allowed
+#   effort:         low | medium | high | xhigh | max
+#   maxBudgetUsd:   the session stops once it has spent this much
+#   maxTurns:       defaults to 50
+#   mcpServers:     { <name>: { url, headers? } }, HTTP servers only
+
+worker:
+  runtime: text
+
+reviewer:
+  runtime: text

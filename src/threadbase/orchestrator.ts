@@ -45,20 +45,23 @@ function nowSeconds(): number {
 const MAX_TURNS_PER_RUN = 20;
 const MAX_HISTORY_EVENTS = 500;
 
-/** State one run hands to the next when it continues as new. */
-export interface OrchestratorCarry {
-  /** Inputs still waiting. Each already got its `queued` event. */
-  queue: UserInputSignal[];
+/** The second start argument. Continue-as-new carries it to the next run. */
+export interface OrchestratorOptions {
+  /** Inputs still waiting. Each already got its `queued` event. Set only by continue-as-new. */
+  queue?: UserInputSignal[];
+  /** The session's project directory. agent-sdk roles work in it; without it they run as text. */
+  projectPath?: string;
 }
 
 /**
  * @param sessionId  tb-streamer's session id (used as the routing key on the
  *                   webhook and as part of the workflowId by convention).
- * @param carry      Set only by continue-as-new; the streamer starts with
- *                   `[sessionId]` alone.
+ * @param opts       The streamer passes `{ projectPath }`; continue-as-new adds `queue`.
+ *                   Older streamers start with `[sessionId]` alone.
  */
-export async function orchestratorWorkflow(sessionId: string, carry?: OrchestratorCarry): Promise<void> {
-  const queue: UserInputSignal[] = carry?.queue ?? [];
+export async function orchestratorWorkflow(sessionId: string, opts?: OrchestratorOptions): Promise<void> {
+  const queue: UserInputSignal[] = opts?.queue ?? [];
+  const projectPath = opts?.projectPath;
   let turnsThisRun = 0;
   let currentTurnId: string | undefined;
   let stage: string = 'thinking';
@@ -108,7 +111,7 @@ export async function orchestratorWorkflow(sessionId: string, carry?: Orchestrat
         // Let a `userInput` handler finish its `queued` event first.
         await condition(allHandlersFinished);
         log.info('orchestrator continuing as new', { sessionId, turnsThisRun, queueDepth: queue.length });
-        await continueAsNew<typeof orchestratorWorkflow>(sessionId, { queue });
+        await continueAsNew<typeof orchestratorWorkflow>(sessionId, { queue, ...(projectPath ? { projectPath } : {}) });
       }
       await condition(() => queue.length > 0);
       const sig = queue.shift()!;
@@ -131,6 +134,7 @@ export async function orchestratorWorkflow(sessionId: string, carry?: Orchestrat
             turnId: sig.turnId,
             prompt: sig.prompt,
             conversationHistory: sig.conversationHistory,
+            ...(projectPath ? { projectPath } : {}),
           }],
         });
         log.info('child turn workflow completed', { sessionId, turnId: sig.turnId });
