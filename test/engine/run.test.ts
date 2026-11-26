@@ -10,6 +10,8 @@ const io: PipelineIO = {
   agent: async () => 'out',
   review: async () => ({ approved: true, notes: '' }),
   gate: async () => {},
+  newId: () => 'g',
+  wait: async (ready) => ready(),
   emit: async () => {},
 };
 
@@ -39,7 +41,7 @@ describe('runPipeline', () => {
 
   it('is not overruled when the pipeline has no review phase', async () => {
     const result = await runPipeline({ phases: [{ kind: 'agent', role: 'worker' }] }, io);
-    expect(result).toEqual({ content: 'out', reworkAttempts: 0, overruled: false });
+    expect(result).toEqual({ content: 'out', reworkAttempts: 0, overruled: false, stopped: false });
   });
 });
 

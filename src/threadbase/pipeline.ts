@@ -9,7 +9,8 @@
 // - `timestamp` uses the workflow's deterministic Date.now().
 // - `seq` is incremented from a per-turn counter — no global mutable state.
 
-import { proxyActivities, proxyLocalActivities, setHandler, uuid4, log } from '@temporalio/workflow';
+import { condition, proxyActivities, proxyLocalActivities, setHandler, uuid4, log } from '@temporalio/workflow';
+import type { Duration } from '@temporalio/common';
 import type { ProgressEvent, Stage } from '@threadbase-sh/agent-types';
 
 import { runPipeline } from '../engine/run';
@@ -155,6 +156,8 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
     async gate() {
       await productSignOff(draft!, review!);
     },
+    newId: () => uuid4(),
+    wait: (ready, timeout) => condition(ready, timeout as Duration),
     async emit(event) {
       for (const partial of toProgress(event)) await send(partial);
     },

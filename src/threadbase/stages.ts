@@ -41,5 +41,8 @@ export function toProgress(event: PipelineEvent): ProgressPartial[] {
         { type: 'stage_transition', stage: 'done' },
         output('done', { content: event.content, reviewerOverruled: event.overruled || undefined }),
       ];
+    case 'gate_open':
+    case 'gate_closed':
+      return []; // wire events land with the agent-types gate_open / gate_closed release
   }
 }
