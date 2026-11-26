@@ -5,6 +5,7 @@ import { Worker } from '@temporalio/worker';
 import { nanoid } from 'nanoid';
 import path from 'node:path';
 import type { ProgressEvent, UserInputSignal } from '@threadbase-sh/agent-types';
+import { approvingGates } from '../threadbase/approve-gates';
 
 let env: TestWorkflowEnvironment;
 let workflowsPath: string;
@@ -28,7 +29,7 @@ function makeActivities(emitted: ProgressEvent[], opts: { failTurnIds?: Set<stri
       return { taskId: draft.taskId, approved: true, notes: '' };
     },
     productSignOff: async () => true,
-    sendProgressEvent: async (ev: ProgressEvent) => { emitted.push(ev); },
+    sendProgressEvent: approvingGates(env.client, async (ev: ProgressEvent) => { emitted.push(ev); }),
   };
 }
 

@@ -36,6 +36,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { nanoid } from "nanoid";
+import { approvingGates } from '../threadbase/approve-gates';
 import type { ActivityStubs } from "./stubs";
 import { createWSSink, type WSSink } from "./ws-sink";
 
@@ -220,7 +221,7 @@ export async function createTestRig(opts: CreateTestRigOpts): Promise<TestRig> {
     workflowsPath: path.resolve(__dirname, "../../src/workflows/index.ts"),
     activities: {
       ...opts.activities,
-      sendProgressEvent: progressActivities.sendProgressEvent,
+      sendProgressEvent: approvingGates(env.client, progressActivities.sendProgressEvent),
     },
   });
 
