@@ -144,7 +144,9 @@ describe('rework-cap gate on the wire', () => {
     const open = events.find((e) => e.type === 'gate_open')!;
     const closed = events.find((e) => e.type === 'gate_closed')!;
     expect(closed.payload).toMatchObject({ optionIndex: 2, timedOut: true });
-    expect(closed.timestamp - open.timestamp).toBe(12 * 3600);
+    // The timer starts after gate_open is sent, so the gap can run a little over.
+    expect(closed.timestamp - open.timestamp).toBeGreaterThanOrEqual(12 * 3600);
+    expect(closed.timestamp - open.timestamp).toBeLessThan(12 * 3600 + 60);
     expect(done!.content).toBe('Stopped at review. The answer was not released.');
   });
 

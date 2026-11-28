@@ -123,7 +123,10 @@ describe('sign-off gate', () => {
     const { events } = await run(() => undefined);
     const closed = events.find((e) => e.type === 'gate_closed')!;
     expect(closed.payload).toMatchObject({ optionIndex: 0, timedOut: true });
-    expect(closed.timestamp - events.find((e) => e.type === 'gate_open')!.timestamp).toBe(12 * 3600);
+    const waited = closed.timestamp - events.find((e) => e.type === 'gate_open')!.timestamp;
+    // The timer starts after gate_open is sent, so the gap can run a little over.
+    expect(waited).toBeGreaterThanOrEqual(12 * 3600);
+    expect(waited).toBeLessThan(12 * 3600 + 60);
     expect(doneContent(events)).toBe('draft 0');
   });
 
