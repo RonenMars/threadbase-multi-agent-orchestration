@@ -14,6 +14,13 @@ on:
       - '.github/workflows/skills-mirror.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   UMBRELLA_REF: 4b5eedb2183da9696c6ad51feac598131142b184
 
@@ -22,8 +29,8 @@ jobs:
     name: Shared skills mirror
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: RonenMars/threadbase
           ref: ${{ env.UMBRELLA_REF }}

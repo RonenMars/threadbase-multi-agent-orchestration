@@ -115,6 +115,9 @@ Then either:
 npm run typecheck && npm test     # unit and integration tests; no Temporal server or API key needed
 ```
 
+CI skips typecheck and tests when every changed file is listed in [`.github/ci-skip-paths`](.github/ci-skip-paths).
+The Scan job always runs: gitleaks over the change's commits, then `npm audit --omit=dev`.
+
 ## Key rules
 
 - **Workflow code is deterministic:** no network, clock or randomness in `src/engine/`, `src/workflows/` or the `src/threadbase/` workflow files; side effects go in activities, which Temporal records and replays.

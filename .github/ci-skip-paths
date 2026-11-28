@@ -1,0 +1,8 @@
+# A change that touches only these paths skips the CI suite (the secret scan still runs).
+# One exact path per line, or "dir/**". List only files that no build or test reads.
+# Anything not listed runs the suite, so leave .github/ out.
+docs/**
+README.md
+CLAUDE.md
+signed-http-webhook-guide.md
+test/integration/README.md
