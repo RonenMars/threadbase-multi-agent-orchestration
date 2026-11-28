@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its older run. Each push to main keeps its own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gate:
     name: Gate
@@ -13,28 +21,64 @@ jobs:
     outputs:
       skip: ${{ steps.decide.outputs.skip }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
       - id: decide
         env:
-          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          haystack="${HEAD_COMMIT_MSG}
-          ${PR_TITLE}
-          ${PR_BODY}"
-          if printf '%s' "$haystack" | grep -qF -- '[skip-ci]'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice title=CI skipped::'[skip-ci]' found in commit message / PR title / PR body — run-ci step skipped, check reported green."
+          # Three dots: only what the change added since it left the base.
+          # --no-renames lists both sides of a move. If the diff fails, run everything.
+          if changed=$(git diff --name-only --no-renames "$BASE...$HEAD"); then
+            skip=$(printf '%s\n' "$changed" | node .github/scripts/ci-skip.js .github/ci-skip-paths)
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            skip=false
           fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          if [ "$skip" = "true" ]; then
+            echo "::notice title=CI skipped::Every changed file is listed in .github/ci-skip-paths."
+          fi
+
+  # Never skipped: a secret can land in any file.
+  scan:
+    name: Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          VERSION: 8.30.1
+          SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Scan the change's commits for secrets
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # Without a usable base, scan the whole history.
+          range="$HEAD"
+          if git cat-file -e "$BASE^{commit}" 2>/dev/null; then range="$BASE..$HEAD"; fi
+          "$RUNNER_TEMP/gitleaks" git --redact --verbose --log-opts="$range" .
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
 
   setup:
     name: Setup
     runs-on: ubuntu-latest
     needs: gate
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup
         if: needs.gate.outputs.skip != 'true'
@@ -45,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [gate, setup]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Typecheck root
         if: needs.gate.outputs.skip != 'true'
@@ -62,18 +106,18 @@ jobs:
       matrix:
         node-version: [20, 22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Node ${{ matrix.node-version }}
         if: needs.gate.outputs.skip != 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
 
       - name: Restore node_modules cache
         if: needs.gate.outputs.skip != 'true'
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('package-lock.json') }}

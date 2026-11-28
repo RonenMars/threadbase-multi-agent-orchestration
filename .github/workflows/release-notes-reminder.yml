@@ -9,13 +9,20 @@ on:
     types: [labeled, opened, synchronize]
 
 permissions:
-  pull-requests: write
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   remind:
     name: Remind about release notes
     runs-on: ubuntu-latest
+    # Writing the sticky comment is the one thing that needs more than read.
+    permissions:
+      contents: read
+      pull-requests: write
 
     # Only run on PRs that carry the `milestone` label. The `labeled` event
     # fires per-label, so we also gate on the current label set to keep
@@ -24,7 +31,7 @@ jobs:
 
     steps:
       - name: Check out PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -55,7 +62,7 @@ jobs:
 
       - name: Post reminder comment (no notes detected)
         if: steps.detect.outputs.has_notes == 'false'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
           # Stable marker so the same comment is updated on each event
@@ -71,7 +78,7 @@ jobs:
 
       - name: Update reminder comment (notes detected)
         if: steps.detect.outputs.has_notes == 'true'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-includes: '<!-- release-notes-reminder -->'
