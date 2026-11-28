@@ -49,7 +49,7 @@ For contributors:
 - **Suite** — `npm test` passes 185 tests in 27 files, locally and on Node 20 and 22 in CI. The 7 integration scenarios already ran in CI before this milestone.
 - **Mutant check** — 5 of 6 mutants of the skip script caught. The survivor removes the comment filter, which has practically no effect on the result.
 - **Secret scan** — locally, gitleaks exits 0 on a clean tree and 1 on a fake secret, including one removed in a later commit. In CI it passed on this change. A failing scan has not been run on GitHub.
-- **End-to-end** — on #24 the Gate ran the suite and Scan passed. A docs-only change skipping the suite has not been observed on GitHub.
+- **End-to-end** — on #24 the Gate ran the suite and Scan passed. On the docs-only [#25](https://github.com/RonenMars/threadbase-multi-agent-orchestration/pull/25), typecheck and tests were skipped while Scan ran and passed.
 
 ## Breaking changes
 
