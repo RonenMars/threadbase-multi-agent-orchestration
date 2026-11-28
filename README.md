@@ -15,6 +15,9 @@ phone ──▶ tb-streamer ──start / signal──▶ Temporal ──▶ thi
   The second argument is optional; a streamer that sends `[sessionId]` alone gets text agents only.
 - **Each message is a `userInput` signal.** The orchestrator queues signals and runs them one at a time as child `pipelineWorkflow`s.
 - **A turn moves through stages:** `processing` (worker drafts), `review` (reviewer scores), `rework` (worker revises, up to 2 times), `sign-off`, `done`.
+- **Two gates ask a human,** as cards the phone answers through the `gateAnswer` signal.
+  If the reviewer still rejects after 2 reworks, the rework-cap gate offers Accept anyway (releases the answer with no sign-off), Retry on a stronger model, or Stop, and stops after 12 hours unanswered.
+  Sign-off offers Approve, Request changes or Stop, and approves after 12 hours unanswered.
 - **Progress goes back by webhook.** Every stage change and agent answer is POSTed to `PROGRESS_WEBHOOK_URL/<sessionId>/progress`, signed as described below.
 - **Every turn ends** with an `agent_output` at `done` or a `terminal_failure`, which releases the streamer's turn lock.
 - **Queries:** `stage` returns the current stage, `queueDepth` the number of waiting inputs.
@@ -39,6 +42,7 @@ The full scheme is in [`signed-http-webhook-guide.md`](signed-http-webhook-guide
 `roles.yaml` defines each role a pipeline names (`worker`, `reviewer`): its runtime, model, prompt file and, for agent sessions, tools and limits.
 The file's header lists every field.
 It is read on each turn, so an edit applies to the next one.
+The worker's `escalationModel` and `escalationEffort` set what "Retry on a stronger model" runs on (Claude Opus 5.5 at `xhigh` as shipped); without a model the option is not offered.
 
 - **`text`** (the default for both roles) makes one model call with no tools.
 - **`agent-sdk`** runs a Claude Agent SDK session in the session's project directory.
@@ -123,7 +127,7 @@ npm run typecheck:types && npm run test:types   # the agent-types package
 
 ## Known limits
 
-- Sign-off always approves; there is no human approval step yet.
+- Retries from the rework-cap gate have no spend cap; each one needs a human answer.
 - Both shipped roles run as `text`; switching one to `agent-sdk` is a `roles.yaml` edit.
 - The text runtime reports no cost yet.
 - The orchestrator never continues as new, so a very long session grows its history without bound.

@@ -14,14 +14,14 @@ import type { Duration } from '@temporalio/common';
 import type { ProgressEvent, Stage } from '@threadbase-sh/agent-types';
 
 import { GateInbox, runPipeline } from '../engine/run';
-import type { PipelineSpec } from '../engine/pipeline';
+import type { GatePhase, PipelineSpec } from '../engine/pipeline';
 import type * as agentActivities from '../activities/agents';
 import type { AgentCall, Draft, Review, Task, TurnInput } from '../shared/types';
 import type { TurnResult } from '../workflows/turn';
 import { createSeq } from '../workflows/eventSeq';
 import type * as progressActivities from './progress';
 import { gateAnswerSignal, stageQuery } from './signals';
-import { STOPPED_CONTENT, toProgress, type ProgressPartial } from './stages';
+import { REWORK_CAP_GATE, stoppedContent, toProgress, type ProgressPartial } from './stages';
 
 // Timeout tiers: a text agent is one model call; an agent-sdk session works
 // in the repo for many turns. Both heartbeat, so a dead worker shows in 60 s.
@@ -42,8 +42,10 @@ const sdk = proxyActivities<typeof agentActivities>({
   retry: { maximumAttempts: 2, initialInterval: '10 seconds' },
 });
 
-const { roleRuntimes } = proxyLocalActivities<typeof agentActivities>({
+const { roleRuntimes, escalationAvailable } = proxyLocalActivities<typeof agentActivities>({
   startToCloseTimeout: '10 seconds',
+  // The default retries for ever, which would leave the turn without an end.
+  retry: { maximumAttempts: 3 },
 });
 
 const { sendProgressEvent } = proxyActivities<typeof progressActivities>({
@@ -51,10 +53,26 @@ const { sendProgressEvent } = proxyActivities<typeof progressActivities>({
   retry: { maximumAttempts: 1 }, // helper has its own retry window
 });
 
+const MAX_REWORK = 2;
+
+const reworkCapGate: GatePhase = {
+  kind: 'gate',
+  name: REWORK_CAP_GATE,
+  prompt: `The reviewer still rejects this answer after ${MAX_REWORK} reworks. What now?`,
+  options: [
+    { label: 'Accept anyway', action: 'continue', release: true },
+    { label: 'Retry on a stronger model', action: 'rework', escalate: true },
+    { label: 'Stop', action: 'stop' },
+  ],
+  // Accepting an unanswered card would overrule the reviewer silently, so it stops.
+  timeout: '12 hours',
+  onTimeout: 2,
+};
+
 export const threadbasePipeline: PipelineSpec = {
   phases: [
     { kind: 'agent', role: 'worker' },
-    { kind: 'review', role: 'reviewer', maxRework: 2 },
+    { kind: 'review', role: 'reviewer', maxRework: MAX_REWORK, exhausted: reworkCapGate },
     {
       kind: 'gate',
       name: 'sign-off',
@@ -71,9 +89,18 @@ export const threadbasePipeline: PipelineSpec = {
   ],
 };
 
+/** Turns that started before the rework-cap gate overrule the reviewer and go on to sign-off. */
+const signOffOnlyPipeline: PipelineSpec = {
+  phases: [
+    threadbasePipeline.phases[0],
+    { kind: 'review', role: 'reviewer', maxRework: MAX_REWORK },
+    threadbasePipeline.phases[2],
+  ],
+};
+
 /** Turns that started before the human gate keep replaying the automatic sign-off. */
 const autoSignOffPipeline: PipelineSpec = {
-  phases: [...threadbasePipeline.phases.slice(0, 2), { kind: 'gate', name: 'sign-off' }],
+  phases: [...signOffOnlyPipeline.phases.slice(0, 2), { kind: 'gate', name: 'sign-off' }],
 };
 
 function nowSeconds(): number {
@@ -88,7 +115,8 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
   setHandler(gateAnswerSignal, (answer) => {
     if (!gates.answer(answer)) log.info('gate answer dropped', { sessionId, turnId, gateId: answer.gateId });
   });
-  const spec = patched('human-sign-off') ? threadbasePipeline : autoSignOffPipeline;
+  let spec = autoSignOffPipeline;
+  if (patched('human-sign-off')) spec = patched('rework-gate') ? threadbasePipeline : signOffOnlyPipeline;
 
   log.info('turn started', {
     sessionId,
@@ -160,12 +188,14 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
   const result = await runPipeline(spec, {
     async agent(phase, rework) {
       const role = phase.kind === 'agent' ? phase.role : 'worker';
-      draft = await tier(role).processTask(rework
+      // A stronger model at high effort can outlast the text tier's timeout.
+      const proxy = rework?.escalate ? sdk : tier(role);
+      draft = await proxy.processTask(rework
         ? {
           ...baseTask,
           context: `${baseTask.context ?? ''}\n\nReviewer notes to address: ${rework.notes}`.trim(),
         }
-        : baseTask, call(role));
+        : baseTask, { ...call(role), ...(rework?.escalate ? { escalate: true } : {}) });
       await note(role, draft);
       return draft.content;
     },
@@ -178,6 +208,7 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
     async gate() {
       await productSignOff(draft!, review!);
     },
+    canEscalate: (role) => escalationAvailable(role),
     newId: () => uuid4(),
     wait: (ready, timeout) => condition(ready, timeout as Duration),
     async emit(event) {
@@ -195,7 +226,7 @@ export async function pipelineWorkflow(input: TurnInput): Promise<TurnResult> {
 
   return {
     taskId: turnId,
-    content: result.stopped ? STOPPED_CONTENT : result.content,
+    content: result.stopped ? stoppedContent(result.stoppedAt) : result.content,
     review: review!,
     reworkAttempts: result.reworkAttempts,
     reviewerOverruled: result.overruled,

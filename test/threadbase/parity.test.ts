@@ -3,8 +3,10 @@
 // While the frozen `turnWorkflow` still exists, `pipelineWorkflow` must behave
 // exactly like it: the same progress events in the same order, the same
 // activity calls with the same arguments, and the same result. The one
-// deliberate difference is sign-off: the pipeline asks a human (answered
-// Approve here) where the turn called `productSignOff`, so both are left out.
+// deliberate differences are the human gates, each answered with its first
+// option here. The pipeline asks at sign-off where the turn called
+// `productSignOff`, so both are left out. At the rework cap it asks instead of
+// overruling, and Accept anyway releases without a sign-off stage.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker } from '@temporalio/worker';
@@ -50,6 +52,7 @@ async function run(workflowType: 'turnWorkflow' | 'pipelineWorkflow', approvesAf
         reviews += 1;
         return { taskId: draft.taskId, approved, notes };
       },
+      escalationAvailable: async () => true,
       productSignOff: async (draft: Draft, review: Review) => {
         calls.push(['productSignOff', draft, review]);
         return review.approved;
@@ -94,7 +97,11 @@ describe('pipelineWorkflow matches turnWorkflow', () => {
         const after = await run('pipelineWorkflow', approvesAfter, h);
         expect(before.stage).toBe('done');
         expect(after.events.filter(isGate).map((e) => e.type)).toEqual(['gate_open', 'gate_closed']);
-        expect(withoutSignOff(after)).toEqual(withoutSignOff(before));
+        const expected = withoutSignOff(before);
+        if (approvesAfter === 3) {
+          expected.events = expected.events.filter((e) => (e as { stage?: string }).stage !== 'sign-off');
+        }
+        expect(withoutSignOff(after)).toEqual(expected);
       });
     }
   }

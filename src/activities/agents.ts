@@ -15,7 +15,7 @@
 // Runtime's pino adapter routes it through our shared logger.
 
 import { Context } from '@temporalio/activity';
-import { getRole, loadRoles, type RuntimeName } from '../roles';
+import { getRole, loadRoles, type Role, type RuntimeName } from '../roles';
 import { runtimes, type AgentInput, type AgentResult } from '../runtimes';
 import { withHeartbeat } from '../runtimes/heartbeat';
 import { mask } from '../runtimes/secrets';
@@ -26,9 +26,20 @@ export async function roleRuntimes(): Promise<Record<string, RuntimeName>> {
   return Object.fromEntries(Object.values(loadRoles()).map((r) => [r.name, r.runtime]));
 }
 
+/** Whether a role names a stronger model to retry on. */
+export async function escalationAvailable(name: string): Promise<boolean> {
+  return !!getRole(name).escalationModel;
+}
+
+function escalated(role: Role): Role {
+  const effort = role.escalationEffort ?? role.effort;
+  return { ...role, model: role.escalationModel ?? role.model, ...(effort ? { effort } : {}) };
+}
+
 async function runRole(call: AgentCall, input: AgentInput): Promise<{ result: AgentResult; note?: string }> {
   const ctx = Context.current();
-  const role = getRole(call.role);
+  const base = getRole(call.role);
+  const role = call.escalate ? escalated(base) : base;
   const sdk = role.runtime === 'agent-sdk' && !!call.cwd;
   const note = role.runtime === 'agent-sdk' && !call.cwd
     ? `The ${role.name} has no project directory for this session, so it ran without tools.`

@@ -1,9 +1,10 @@
 // Integration scenario 3 — rework cap + reviewerOverruled.
 //
 // Stub the reviewer to NEVER approve. The turn workflow loops worker→review
-// twice (the cap), then signs off with the last draft anyway, emitting a
-// final agent_output flagged `reviewerOverruled: true`. Verifies:
-//   - Stage sequence includes 2 rework iterations + sign-off + done.
+// twice (the cap), then asks at the rework-cap gate. The harness answers
+// Accept anyway, which releases the last draft with no sign-off, in a final
+// agent_output flagged `reviewerOverruled: true`. Verifies:
+//   - Stage sequence includes 2 rework iterations, then done.
 //   - reworkAttempt field is 1 and 2 on the two rework stage_transitions.
 //   - Final agent_output payload carries reviewerOverruled: true.
 //   - JSONL line carries reviewerOverruled: true.
@@ -75,7 +76,7 @@ describe("integration: rework cap + reviewerOverruled", () => {
       }>;
 
       // Stage sequence:
-      //   processing → review → rework → review → rework → review → sign-off → done
+      //   processing → review → rework → review → rework → review → done
       const stages = messages
         .filter((m) => m.type === "session_update")
         .map((m) => m.stage);
@@ -86,7 +87,6 @@ describe("integration: rework cap + reviewerOverruled", () => {
         "review",
         "rework",
         "review",
-        "sign-off",
         "done",
       ]);
 

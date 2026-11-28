@@ -7,19 +7,25 @@
 #   model:          defaults to AGENT_MODEL
 #   prompt:         a file, relative to this one, used as the system prompt
 #                   (text) or appended to the Claude Code preset (agent-sdk)
+#   effort:         low | medium | high | xhigh | max. A text role with one
+#                   streams with room to think, and fails on a cut-off answer
+#   escalationModel, escalationEffort:
+#                   what "Retry on a stronger model" runs on. If the worker
+#                   names no model, that option is not offered
 #
 # agent-sdk only:
 #   tools:          built-in tools the session may use, all auto-approved;
 #                   defaults to the read-only Read, Grep and Glob
 #   allow:          extra permission rules, e.g. "Bash(git diff:*)"
 #   permissionMode: defaults to dontAsk, which refuses anything not allowed
-#   effort:         low | medium | high | xhigh | max
 #   maxBudgetUsd:   the session stops once it has spent this much
 #   maxTurns:       defaults to 50
 #   mcpServers:     { <name>: { url, headers? } }, HTTP servers only
 
 worker:
   runtime: text
+  escalationModel: claude-opus-5-5
+  escalationEffort: xhigh
 
 reviewer:
   runtime: text

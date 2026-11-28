@@ -30,8 +30,17 @@ function output(stage: Stage, payload: AgentOutputPayload, attempt?: number): Pr
   };
 }
 
+/** The gate asked when the reviewer still rejects at the rework cap. It belongs to the review stage. */
+export const REWORK_CAP_GATE = 'rework-cap';
+
+function gateStage(name: string | undefined): Stage {
+  return name === REWORK_CAP_GATE ? 'review' : 'sign-off';
+}
+
 /** What a turn delivers when the human stops it at a gate. */
-export const STOPPED_CONTENT = 'Stopped at sign-off. The answer was not released.';
+export function stoppedContent(gate: string | undefined): string {
+  return `Stopped at ${gateStage(gate)}. The answer was not released.`;
+}
 
 export function toProgress(event: PipelineEvent): ProgressPartial[] {
   switch (event.kind) {
@@ -49,7 +58,7 @@ export function toProgress(event: PipelineEvent): ProgressPartial[] {
       return [
         { type: 'stage_transition', stage: 'done' },
         output('done', {
-          content: event.stopped ? STOPPED_CONTENT : event.content,
+          content: event.stopped ? stoppedContent(event.stoppedAt) : event.content,
           reviewerOverruled: event.overruled || undefined,
         }),
       ];
@@ -61,7 +70,7 @@ export function toProgress(event: PipelineEvent): ProgressPartial[] {
         ...(gate.detail ? { detail: gate.detail } : {}),
         options: (gate.options ?? []).map((o) => o.label),
       };
-      return [{ type: 'gate_open', stage: 'sign-off', payload: payload as unknown as Record<string, unknown> }];
+      return [{ type: 'gate_open', stage: gateStage(gate.name), payload: payload as unknown as Record<string, unknown> }];
     }
     case 'gate_closed': {
       const payload: GateClosedPayload = {
@@ -69,7 +78,8 @@ export function toProgress(event: PipelineEvent): ProgressPartial[] {
         optionIndex: event.optionIndex,
         timedOut: event.timedOut,
       };
-      return [{ type: 'gate_closed', stage: 'sign-off', payload: payload as unknown as Record<string, unknown> }];
+      const stage = gateStage((event.phase as Extract<Phase, { kind: 'gate' }>).name);
+      return [{ type: 'gate_closed', stage, payload: payload as unknown as Record<string, unknown> }];
     }
   }
 }

@@ -40,6 +40,7 @@ function makeStubActivities(emitted: ProgressEvent[], opts: ScenarioOptions) {
       return { taskId: draft.taskId, approved, notes: approved ? '' : 'please revise' };
     },
     productSignOff: async (_d: Draft, _r: Review) => true,
+    escalationAvailable: async () => true,
     sendProgressEvent: async (ev: ProgressEvent) => {
       emitted.push(ev);
     },
@@ -99,7 +100,7 @@ describe('turnWorkflow', () => {
     expect(result.reworkAttempts).toBe(1);
   });
 
-  it('caps rework at 2 and emits reviewerOverruled on the final agent_output', async () => {
+  it('caps rework at 2, asks at the rework-cap gate, and stops when nobody answers', async () => {
     const emitted: ProgressEvent[] = [];
     const result = await runTurnWorkflow(emitted, { reviewerApprovesAfter: 3 });
 
@@ -110,7 +111,7 @@ describe('turnWorkflow', () => {
       'processing', 'review',
       'rework', 'review',
       'rework', 'review',
-      'sign-off', 'done',
+      'done',
     ]);
     expect(result.reworkAttempts).toBe(2);
 
@@ -118,7 +119,7 @@ describe('turnWorkflow', () => {
       (e) => e.type === 'agent_output' && (e.payload as { reviewerOverruled?: boolean })?.reviewerOverruled,
     );
     expect(finalOutput).toBeDefined();
-    expect((finalOutput!.payload as { content: string }).content).toContain('draft for');
+    expect((finalOutput!.payload as { content: string }).content).toBe('Stopped at review. The answer was not released.');
   });
 
   it('attaches reworkAttempt to rework stage_transitions', async () => {
