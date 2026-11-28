@@ -2,5 +2,5 @@
 // Barrel for Temporal's flat activity namespace. Worker.create({ activities })
 // expects a single object exposing every callable activity by name.
 
-export { processTask, reviewTask, productSignOff, roleRuntimes } from './agents';
+export { processTask, reviewTask, productSignOff, roleRuntimes, escalationAvailable } from './agents';
 export { sendProgressEvent } from '../threadbase/progress';
