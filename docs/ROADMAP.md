@@ -63,4 +63,4 @@ The mobile app does not yet render `agent_output`, `terminal_failure` or stage e
 ## The wire types
 
 `@threadbase-sh/agent-types` lives in [threadbase-agent-types](https://github.com/RonenMars/threadbase-agent-types) and is published on npm.
-This repo checks it out as a git submodule at `packages/agent-types`, pinned to a release tag (`v1.0.0` today), and each agent-types release opens a PR here that bumps it (`.github/workflows/update-agent-types.yml`).
+This repo installs it from npm, and Dependabot proposes version bumps.
