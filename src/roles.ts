@@ -19,6 +19,9 @@ export interface Role {
   allow?: string[];
   permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** What an escalated retry runs on. Without a model there is no retry option. */
+  escalationModel?: string;
+  escalationEffort?: Role['effort'];
   maxBudgetUsd?: number;
   maxTurns?: number;
   mcpServers?: Record<string, { url: string; headers?: Record<string, string> }>;

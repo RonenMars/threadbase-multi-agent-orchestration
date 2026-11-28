@@ -36,9 +36,8 @@ Each milestone keeps the wire contract the streamer relies on: `orchestratorWork
 - Sign-off becomes a real gate: Approve, Request changes (back to rework) or Stop.
 - Every turn still ends with `agent_output` at `done` or with `terminal_failure`, so the streamer's turn lock always releases.
 
-### M5: spend cap and rework escalation
+### M5: rework escalation
 
-- A per-turn spend cap over the runtimes' reported cost; reaching it ends the turn with `terminal_failure` and a reason.
 - Reaching the rework cap opens a gate (accept anyway, retry on a stronger model, or stop) instead of sending the last draft with `reviewerOverruled`.
 
 ### M6: CI hardening
@@ -49,6 +48,7 @@ Each milestone keeps the wire contract the streamer relies on: `orchestratorWork
 
 ## Deferred
 
+- **Per-turn spend cap.** A cap over the runtimes' reported cost that ends the turn with `terminal_failure` and a reason. Dropped from M5 for now (2026-11-28). It needs pricing for the text runtime, which reports no cost.
 - **LLM-as-orchestrator.** The pipeline is a fixed list of phases. An LLM that picks the next phase comes once the static pipeline is proven in real traffic.
 - **Workflow state promotion.** The workflow keeps no conversation history; it rides in each `userInput` payload, composed by the streamer. Once cross-turn reasoning needs it, hold a compact summary plus a recent-turn buffer in the workflow.
 - **Review memory (lessons and precedents).** Once gates produce decisions worth reusing.

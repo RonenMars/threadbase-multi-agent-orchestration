@@ -51,6 +51,7 @@ export interface ActivityStubs {
   processTask: (task: Task) => Promise<Draft>;
   reviewTask: (draft: Draft) => Promise<Review>;
   productSignOff: (draft: Draft, review: Review) => Promise<boolean>;
+  escalationAvailable: () => Promise<boolean>;
 }
 
 /**
@@ -64,6 +65,10 @@ export function makeStubActivities(behavior: StubBehavior): ActivityStubs {
   let lastReviewerNotes = "";
 
   return {
+    async escalationAvailable(): Promise<boolean> {
+      return true;
+    },
+
     async processTask(task: Task): Promise<Draft> {
       processCalls += 1;
       const baseContent = `draft #${processCalls} for ${task.id}`;

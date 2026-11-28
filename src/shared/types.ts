@@ -27,6 +27,8 @@ export interface Review {
 export interface AgentCall {
   role: string;
   cwd?: string;
+  /** Run the role on its escalation model and effort. */
+  escalate?: boolean;
 }
 
 export interface Result {

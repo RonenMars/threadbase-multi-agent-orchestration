@@ -41,6 +41,15 @@ describe('replay of histories recorded before the pipeline child', () => {
     );
   });
 
+  // Recorded at aae73d3: the reviewer never approved, and the turn went on to sign-off.
+  it('replays an overruled turn recorded before the rework-cap gate', async () => {
+    await Worker.runReplayHistory(
+      { workflowsPath },
+      loadHistory('pipeline-overruled-history.json'),
+      'turn-turn-overruled',
+    );
+  });
+
   it('replays a turnWorkflow that was in flight', async () => {
     await Worker.runReplayHistory(
       { workflowsPath },
